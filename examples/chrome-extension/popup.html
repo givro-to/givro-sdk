@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      width: 360px;
+      min-height: 200px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 13px;
+      background: #0d1117;
+      color: #e6edf3;
+      padding: 14px;
+    }
+    h1 { font-size: 15px; font-weight: 700; color: #5fa8ec; margin-bottom: 12px; display: flex; align-items: center; gap: 6px; }
+    .section { margin-bottom: 12px; }
+    label { display: block; font-size: 11px; color: #8b949e; margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.04em; }
+    input, select {
+      width: 100%; padding: 6px 8px;
+      background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+      color: #e6edf3; font-size: 13px; font-family: inherit;
+      outline: none;
+    }
+    input:focus, select:focus { border-color: #5fa8ec; }
+    .row { display: flex; gap: 6px; }
+    .row input, .row select { flex: 1; }
+    .bal { font-size: 12px; color: #8b949e; margin-top: 3px; min-height: 16px; }
+    .bal span { color: #5fa8ec; font-weight: 600; }
+    button {
+      width: 100%; padding: 8px;
+      background: #1a6bc1; border: none; border-radius: 6px;
+      color: #fff; font-size: 13px; font-weight: 600; cursor: pointer;
+      margin-top: 4px;
+    }
+    button:hover:not(:disabled) { background: #2180e0; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .status {
+      margin-top: 10px; padding: 8px 10px; border-radius: 6px;
+      font-size: 12px; line-height: 1.5; word-break: break-all;
+      display: none;
+    }
+    .status.ok  { background: rgba(35,134,54,0.2);  border: 1px solid #2ea043; color: #3fb950; display: block; }
+    .status.err { background: rgba(248,81,73,0.15); border: 1px solid #f85149; color: #f85149; display: block; }
+    .status.info{ background: rgba(31,111,235,0.15);border: 1px solid #1f6feb; color: #79c0ff; display: block; }
+    .divider { border: none; border-top: 1px solid #21262d; margin: 10px 0; }
+    .mono { font-family: "SF Mono", "Fira Code", monospace; font-size: 11px; }
+    a { color: #5fa8ec; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .settings-toggle { font-size: 11px; color: #8b949e; cursor: pointer; margin-bottom: 8px; display: inline-block; }
+    .settings-toggle:hover { color: #e6edf3; }
+    .settings { display: none; }
+    .settings.open { display: block; }
+    .hint { font-size: 11px; color: #8b949e; margin-top: 3px; }
+  </style>
+</head>
+<body>
+  <h1>⚡ HFI Pay <span style="font-size:10px;color:#8b949e;font-weight:400;margin-left:auto;">dev</span></h1>
+
+  <span class="settings-toggle" id="settingsToggle">⚙ Settings</span>
+  <div class="settings" id="settings">
+    <div class="section">
+      <label>RPC URL (EVM)</label>
+      <input id="rpcUrl" value="http://localhost:9545" />
+    </div>
+    <div class="section">
+      <label>Portal base URL</label>
+      <input id="portalUrl" value="http://localhost:3100" />
+    </div>
+    <div class="section">
+      <label>EVM chain ID</label>
+      <input id="chainId" type="number" value="31337" />
+    </div>
+    <div class="section">
+      <label>Contract address (HfiPayAttestedV1)</label>
+      <input id="contractAddr" placeholder="0x…" class="mono" />
+    </div>
+    <div class="section">
+      <label>Private key (dev only — never use mainnet key)</label>
+      <input id="privKey" type="password" placeholder="0x…" class="mono" />
+    </div>
+    <hr class="divider" />
+  </div>
+
+  <div class="section">
+    <label>Your address</label>
+    <div class="mono bal" id="address">—</div>
+    <div class="bal">Balance: <span id="balance">—</span></div>
+  </div>
+
+  <hr class="divider" />
+
+  <div class="section">
+    <label>Send to</label>
+    <div class="row" style="margin-bottom:6px;">
+      <select id="recipientKind" style="flex:0 0 80px;">
+        <option value="email">Email</option>
+        <option value="x">X</option>
+        <option value="phone">Phone</option>
+      </select>
+      <input id="recipient" placeholder="alice@example.com" />
+    </div>
+  </div>
+
+  <div class="section row">
+    <div style="flex:1">
+      <label>Amount</label>
+      <input id="amount" type="number" min="0" step="any" placeholder="1.0" />
+    </div>
+    <div style="flex:0 0 100px">
+      <label>Token</label>
+      <input id="token" value="GO" placeholder="GO / USDC / 0x…" />
+    </div>
+  </div>
+  <div class="hint">Symbol (GO, ETH, USDC) or 0x address. Server resolves it.</div>
+
+  <button id="sendBtn" disabled>Send</button>
+
+  <div class="status" id="status"></div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

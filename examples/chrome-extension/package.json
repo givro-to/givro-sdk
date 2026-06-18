@@ -1,0 +1,16 @@
+{
+  "name": "hfi-pay-chrome-extension",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "esbuild src/popup.ts --bundle --outfile=popup.js --platform=browser --target=chrome120 --minify --inject:src/polyfill.ts",
+    "dev": "esbuild src/popup.ts --bundle --outfile=popup.js --platform=browser --target=chrome120 --watch --inject:src/polyfill.ts"
+  },
+  "devDependencies": {
+    "esbuild": "^0.21.0"
+  },
+  "dependencies": {
+    "viem": "^2.21.0",
+    "buffer": "^6.0.3"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "HFI Pay Dev",
+  "version": "0.1.0",
+  "description": "Dev extension: send crypto via HFI Pay to email / X handle",
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "HFI Pay"
+  },
+  "permissions": [],
+  "host_permissions": [
+    "http://localhost/*"
+  ]
+}

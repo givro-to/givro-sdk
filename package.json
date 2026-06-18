@@ -1,0 +1,45 @@
+{
+  "name": "hfi-sdk",
+  "version": "0.1.0",
+  "description": "HFI Pay SDK: EVM + Solana deposits bound to email/phone/X + backend quote (HFIPay / paper-aligned client helpers)",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "peerDependencies": {
+    "@solana/spl-token": "^0.4.0",
+    "@solana/web3.js": "^1.95.0",
+    "viem": "^2.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@solana/spl-token": { "optional": true },
+    "@solana/web3.js": { "optional": true },
+    "viem": { "optional": true }
+  },
+  "devDependencies": {
+    "@solana/spl-token": "^0.4.9",
+    "@solana/web3.js": "^1.95.8",
+    "@vitest/coverage-v8": "^2.0.0",
+    "typescript": "^5.6.0",
+    "viem": "^2.21.0",
+    "vitest": "^2.0.0"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  }
+}
