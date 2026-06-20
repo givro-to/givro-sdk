@@ -60,6 +60,7 @@ export {
   vaultAtaPda,
   vaultMetaPda,
   bindingPda,
+  mintPolicyPda,
 } from "./solana/pda.js";
 export {
   hfipayClaimDigestSvmSpl,
@@ -91,4 +92,3 @@ export {
   type SolanaWalletLike,
   type SolanaDepositResult,
 } from "./solana/walletAdapter.js";
-

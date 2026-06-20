@@ -30,7 +30,7 @@ export const NETWORKS: Record<NetworkName, HfiPayNetwork> = {
     evmChainId: 31337,
     solanaCluster: "devnet",
     solanaProgramId: "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS",
-    solanaDepositProgramId: "8zsFkQmBTYQxWyeaGdrSjRtH8amuAnjtkqbLMMwowAJL",
+    solanaDepositProgramId: "B8sLQ5g6ABbZyyuyx9hia4kFv8nMo4wCqWXcLcR9XpJZ",
     portalBaseUrl: "http://localhost:3100",
     defaultQuoteUrl: "http://localhost:3100/api/portal/v1/quote",
     knownTokens: {
@@ -43,7 +43,7 @@ export const NETWORKS: Record<NetworkName, HfiPayNetwork> = {
     evmChainId: 11155111, // Sepolia
     solanaCluster: "devnet",
     solanaProgramId: "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS",
-    solanaDepositProgramId: "8zsFkQmBTYQxWyeaGdrSjRtH8amuAnjtkqbLMMwowAJL",
+    solanaDepositProgramId: "B8sLQ5g6ABbZyyuyx9hia4kFv8nMo4wCqWXcLcR9XpJZ",
     portalBaseUrl: "https://testnet.hfi.network",
     defaultQuoteUrl: "https://testnet.hfi.network/api/portal/v1/quote",
     knownTokens: {
@@ -56,7 +56,7 @@ export const NETWORKS: Record<NetworkName, HfiPayNetwork> = {
     evmChainId: 1,
     solanaCluster: "mainnet-beta",
     solanaProgramId: "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS",
-    solanaDepositProgramId: "8zsFkQmBTYQxWyeaGdrSjRtH8amuAnjtkqbLMMwowAJL",
+    solanaDepositProgramId: "B8sLQ5g6ABbZyyuyx9hia4kFv8nMo4wCqWXcLcR9XpJZ",
     portalBaseUrl: "https://hfi.network",
     defaultQuoteUrl: "https://hfi.network/api/portal/v1/quote",
     knownTokens: {

@@ -318,7 +318,7 @@ toBaseUnits('100', 18)   // '100000000000000000000'  ETH wei
 
 ```typescript
 // 程序 ID（由 Portal 报价返回覆盖，生产环境以报价值为准）
-DEFAULT_HFI_PAY_PROGRAM_ID = '8zsFkQmBTYQxWyeaGdrSjRtH8amuAnjtkqbLMMwowAJL'
+DEFAULT_HFI_PAY_PROGRAM_ID = 'B8sLQ5g6ABbZyyuyx9hia4kFv8nMo4wCqWXcLcR9XpJZ'
 
 // Anchor discriminators（sha256("global:<name>").slice(0,8)）
 DEPOSIT_SPL_DISCRIMINATOR    = Uint8Array [224, 0, 198, 175, 198, 47, 105, 204]
@@ -332,7 +332,10 @@ vaultAta:       ["vault_ata",       paymentRef]
 vaultMeta:      ["vault_meta",      paymentRef]
 binding:        ["binding",         idHash]
 config:         ["config"]                     // 全局合约配置（含 treasury 地址）
+mintPolicy:     ["mint_policy",     mint]      // mint=Pubkey::default() 表示 native SOL
 ```
+
+`MintPolicy.useUsdFeeFloor=true` 仅适用于 USDC/USDT 这类 6-decimal 美元面值资产；native SOL 应配置为 `false`，只按 bps 收费。
 
 ### deposit_spl 指令数据布局
 
@@ -354,24 +357,47 @@ offset  size  field
 
 ```
 0  payer                 signer, writable
-1  mint                  readonly
-2  payerAta              writable
-3  vaultAuthority        readonly
-4  vaultAta              writable
-5  vaultMeta             writable
-6  TOKEN_PROGRAM         readonly
-7  SYSTEM_PROGRAM        readonly
-8  SYSVAR_RENT           readonly
-9  ASSOCIATED_TOKEN      readonly
+1  config                readonly
+2  mint                  readonly
+3  mintPolicy            readonly
+4  payerAta              writable
+5  vaultAuthority        readonly
+6  vaultAta              writable
+7  vaultMeta             writable
+8  TOKEN_PROGRAM         readonly
+9  SYSTEM_PROGRAM        readonly
+10 SYSVAR_RENT           readonly
 ```
 
 ### deposit_native 账户列表
 
 ```
 0  payer              signer, writable
-1  vaultAuthority     writable
-2  vaultMeta          writable
-3  SYSTEM_PROGRAM     readonly
+1  config             readonly
+2  nativeMintPolicy   readonly
+3  vaultAuthority     writable
+4  vaultMeta          writable
+5  SYSTEM_PROGRAM     readonly
+```
+
+### claim 账户列表（relay 执行，SPL）
+
+```
+0  relayer                  signer, writable
+1  config                   readonly
+2  mint                     readonly
+3  mintPolicy               readonly
+4  vaultAuthority           readonly
+5  vaultAta                 writable
+6  vaultMeta                writable
+7  binding                  writable
+8  recipient                readonly
+9  recipientAta             writable
+10 treasury                 writable
+11 treasuryAta              writable
+12 TOKEN_PROGRAM            readonly
+13 ASSOCIATED_TOKEN_PROGRAM readonly
+14 SYSTEM_PROGRAM           readonly
 ```
 
 ### claim_native 账户列表（relay 执行）
@@ -379,10 +405,11 @@ offset  size  field
 ```
 0  relayer            signer, writable
 1  config             readonly（全局配置，含 treasury pubkey）
-2  vaultAuthority     writable
-3  vaultMeta          writable
-4  binding            writable（IdentityBinding PDA）
-5  recipient          writable（绑定的钱包地址）
-6  treasury           writable（协议 fee 接收方）
-7  SYSTEM_PROGRAM     readonly
+2  nativeMintPolicy   readonly
+3  vaultAuthority     writable
+4  vaultMeta          writable
+5  binding            writable（IdentityBinding PDA）
+6  recipient          writable（绑定的钱包地址）
+7  treasury           writable（协议 fee 接收方）
+8  SYSTEM_PROGRAM     readonly
 ```

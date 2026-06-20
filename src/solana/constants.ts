@@ -1,5 +1,5 @@
 /** Must match `declare_id!` after you deploy; replace for mainnet. */
-export const DEFAULT_HFI_PAY_PROGRAM_ID = "8zsFkQmBTYQxWyeaGdrSjRtH8amuAnjtkqbLMMwowAJL";
+export const DEFAULT_HFI_PAY_PROGRAM_ID = "B8sLQ5g6ABbZyyuyx9hia4kFv8nMo4wCqWXcLcR9XpJZ";
 
 /** sha256("global:deposit_spl").slice(0,8) */
 export const DEPOSIT_SPL_DISCRIMINATOR = Uint8Array.from([224, 0, 198, 175, 198, 47, 105, 204]);
