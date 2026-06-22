@@ -30,7 +30,7 @@ export type {
   PrepareSolanaSendParams,
   RetryOptions,
 } from "./types.js";
-export { HFI_PAY_DEPOSIT_ABI, HFI_PAY_ATTESTED_V1_ABI, HFI_PAY_FACTORY_ABI, ZERO_ADDRESS } from "./evm/abi.js";
+export { HFI_PAY_DEPOSIT_ABI, HFI_PAY_ATTESTED_V1_ABI, ZERO_ADDRESS } from "./evm/abi.js";
 export {
   HFI_PAY_DEPLOYMENT_DOMAIN,
   hfipayClaimDigestEvm,
