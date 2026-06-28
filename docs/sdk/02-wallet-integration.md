@@ -203,7 +203,7 @@ const quote = await client.quoteSend({
   chainId: 1,
 });
 
-// approve (仅 ERC-20) + deposit 两笔 tx
+// Attested quote required; returns approve (仅 ERC-20) + deposit tx
 const { approve, deposit } = client.prepareEvmTransactions({ quote });
 
 // wagmi 示例

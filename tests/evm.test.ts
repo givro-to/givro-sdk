@@ -3,7 +3,9 @@ import {
   isNativeEvmToken,
   buildEvmDepositRequest,
   buildEvmApproveRequest,
+  buildEvmAttestedDepositRequest,
 } from "../src/evm/prepareEvmDeposit.js";
+import { hfipayClaimDigestEvm } from "../src/evm/claimDigest.js";
 import { ZERO_ADDRESS } from "../src/evm/abi.js";
 import type { Address, Hex } from "viem";
 
@@ -55,6 +57,46 @@ describe("buildEvmDepositRequest — native token", () => {
     expect(req.data).toMatch(/^0x[0-9a-f]+$/i);
     // depositNative(bytes32) selector
     expect(req.data.slice(0, 10)).toBe("0x42ef5fbb");
+  });
+});
+
+describe("buildEvmAttestedDepositRequest", () => {
+  it("encodes current attested native deposit selector", () => {
+    const req = buildEvmAttestedDepositRequest({
+      depositContract: DEPOSIT_CONTRACT,
+      order: {
+        chainId: 8453n,
+        paymentRef: PAYMENT_REF,
+        idHash: ("0x" + "cd".repeat(32)) as Hex,
+        token: ZERO_ADDRESS,
+        amount: AMOUNT,
+        cancelBefore: 1n,
+        claimBefore: 2n,
+        refundAfter: 3n,
+      },
+    });
+    expect(req.to.toLowerCase()).toBe(DEPOSIT_CONTRACT.toLowerCase());
+    expect(req.value).toBe(AMOUNT);
+    expect(req.data.slice(0, 10)).toBe("0x5476871e");
+  });
+});
+
+describe("hfipayClaimDigestEvm", () => {
+  it("matches the canonical EVM claim digest test vector", () => {
+    const digest = hfipayClaimDigestEvm({
+      chainId: 8453n,
+      verifyingContract: "0x1111111111111111111111111111111111111111",
+      hasErc20: true,
+      mint32: "0x0000000000000000000000002222222222222222222222222222222222222222",
+      bindingEpoch: 0n,
+      intentId: ("0x" + "ab".repeat(32)) as Hex,
+      blindedBinding: ("0x" + "cd".repeat(32)) as Hex,
+      amount: 1_000_000n,
+      destinationEvm: "0x3333333333333333333333333333333333333333",
+      expiry: 1_800_000_000n,
+      nonce: 7n,
+    });
+    expect(digest).toBe("0x063c569be121c102820db3040bb9d132c9e9773243b0c8409e0ec5abdc49a1ee");
   });
 });
 

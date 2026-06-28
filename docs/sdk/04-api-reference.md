@@ -162,7 +162,7 @@ const client = createHfiPayClient({
 
 - `client.fetchQuote(body)` — 底层报价，传入 QuoteRequestBody
 - `client.quoteSend(params)` — 更易用的报价接口，含 normalizeRecipient
-- `client.prepareEvmTransactions({ quote, depositContract?, originRelayAddress? })` — 返回 `{ approve, deposit }` tx 对象
+- `client.prepareEvmTransactions({ quote, originRelayAddress? })` — 要求 attested EVM quote，返回 `{ approve, deposit }` tx 对象
 - `client.prepareSolanaTransaction(connection, { quote, payer, recentBlockhash?, originRelayAddress? })` — 返回 VersionedTransaction
 
 ---
@@ -274,7 +274,8 @@ interface AttestedOrder {
 
 ```typescript
 import {
-  buildEvmDepositRequest,    // 基础 deposit（非 attested flow）
+  buildEvmAttestedDepositRequest, // 当前 Rail 1 attested deposit
+  buildEvmDepositRequest,    // deprecated: legacy/basic HfiPayDeposit only
   buildEvmCancelRequest,     // 发送方取消
   buildEvmRefundTx,          // 退款
   buildEvmBindTx,            // 绑定钱包地址到 idHash

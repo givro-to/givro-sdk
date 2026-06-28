@@ -89,7 +89,15 @@ export function buildEvmAttestedDepositRequest(params: {
   };
 }
 
-/** Second tx (or only tx for native): deposit into the configured EVM deposit contract (e.g. `HfiPayDeposit`). */
+/**
+ * Legacy/basic deposit helper for old `HfiPayDeposit` deployments.
+ *
+ * Current HFI Pay quotes use `buildEvmAttestedDepositRequest` with
+ * `depositNativeWithOrder` / `depositErc20WithOrder`; do not use this helper
+ * for attested Rail 1 quotes.
+ *
+ * @deprecated Use `buildEvmAttestedDepositRequest` for current HFI Pay quotes.
+ */
 export function buildEvmDepositRequest(params: {
   depositContract: Address;
   paymentRef: Hex;

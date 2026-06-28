@@ -133,7 +133,7 @@ describe("coercePaymentQuote", () => {
 
   it("throws when ecosystem is invalid", () => {
     const raw = { ...VALID_RAW, ecosystem: "bitcoin" as "evm" };
-    expect(() => coercePaymentQuote(raw)).toThrow(/ecosystem must be evm \| solana \| ace \| tron/);
+    expect(() => coercePaymentQuote(raw)).toThrow(/ecosystem must be evm \| solana \| tron/);
   });
 
   it("parses Tron attested quote (TRC20 base58 token)", () => {

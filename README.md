@@ -148,8 +148,8 @@ const client = createHfiPayClient({
 
 ### `prepareEvmTransactions` behavior
 
-- **Attested quote present** (`attestedContract + orderSignature + attestedOrder`): SDK builds `deposit*WithOrder` tx and uses `attestedContract` as spender for ERC-20 approve.
-- **Legacy/basic quote**: SDK falls back to `depositContract + paymentRef` path.
+- **Attested quote required** (`attestedContract + attestedOrder`): SDK builds `deposit*WithOrder` tx and uses `attestedContract` as spender for ERC-20 approve.
+- **Legacy/basic quote**: `prepareEvmTransactions` rejects it. Use the explicitly deprecated `buildEvmDepositRequest` helper only for old `HfiPayDeposit` deployments.
 
 ### Amount units (important)
 
@@ -172,7 +172,8 @@ const amountUsdc = toBaseUnits("50", 6);   // USDC
 | `createHfiPayClient(config)` | Create a client instance |
 | `HfiPayClient` | Client class |
 | `fetchPaymentQuote(url, body, opts)` | Low-level quote fetch |
-| `buildEvmDepositRequest(params)` | Build raw EVM deposit tx |
+| `buildEvmAttestedDepositRequest(params)` | Build current attested EVM deposit tx |
+| `buildEvmDepositRequest(params)` | Deprecated legacy/basic EVM deposit tx helper |
 | `buildEvmApproveRequest(params)` | Build ERC-20 approve tx |
 | `isNativeEvmToken(address)` | True for 0x000… / 0xeee… |
 | `toWagmiSendParams(tx)` | Convert tx to wagmi sendTransaction args |

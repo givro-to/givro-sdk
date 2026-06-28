@@ -69,6 +69,38 @@ describe("HfiPayClient.prepareEvmTransactions", () => {
     } as unknown as PaymentQuote;
     expect(() => client.prepareEvmTransactions({ quote })).toThrow(/idHash/i);
   });
+
+  it("rejects legacy/basic EVM quotes on the default transaction builder", () => {
+    const quote: PaymentQuote = {
+      paymentRef: ("0x" + "ab".repeat(32)) as `0x${string}`,
+      amount: "1000000",
+      token: "0x0000000000000000000000000000000000000000",
+      ecosystem: "evm",
+      depositContract: "0xdeadbeef00000000000000000000000000000001",
+    };
+    expect(() => client.prepareEvmTransactions({ quote })).toThrow(/attested EVM quote required/i);
+  });
+
+  it("rejects attested quotes when top-level token differs from order token", () => {
+    const quote: PaymentQuote = {
+      paymentRef: ("0x" + "ab".repeat(32)) as `0x${string}`,
+      amount: "1000000",
+      token: "0x0000000000000000000000000000000000000000",
+      ecosystem: "evm",
+      attestedContract: "0xdeadbeef00000000000000000000000000000002",
+      attestedOrder: {
+        chainId: 11155111n,
+        paymentRef: ("0x" + "ab".repeat(32)) as `0x${string}`,
+        idHash: ("0x" + "cd".repeat(32)) as `0x${string}`,
+        token: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        amount: 1000000n,
+        cancelBefore: 1n,
+        claimBefore: 2n,
+        refundAfter: 3n,
+      },
+    };
+    expect(() => client.prepareEvmTransactions({ quote })).toThrow(/token mismatch/i);
+  });
 });
 
 describe("HfiPayClient.fetchQuote (Tron)", () => {

@@ -1,6 +1,6 @@
 import type { Connection } from "@solana/web3.js";
 import { PublicKey } from "@solana/web3.js";
-import type { Address, Hex } from "viem";
+import type { Address } from "viem";
 import { normalizeRecipient, type RecipientKind } from "./identifier.js";
 import { fetchPaymentQuote } from "./quote.js";
 import { DEFAULT_HFI_PAY_PROGRAM_ID } from "./solana/constants.js";
@@ -13,7 +13,6 @@ import { tronAttestedOrderTupleFromQuote } from "./tron/prepareTronAttestedDepos
 import {
   buildEvmApproveRequest,
   buildEvmAttestedDepositRequest,
-  buildEvmDepositRequest,
   isNativeEvmToken,
 } from "./evm/prepareEvmDeposit.js";
 
@@ -41,6 +40,9 @@ export class HfiPayClient {
     const o = q.attestedOrder;
     if (!o.paymentRef || !o.idHash || !o.token) {
       throw new Error("attested quote missing order.paymentRef/idHash/token");
+    }
+    if (q.token.toLowerCase() !== o.token.toLowerCase()) {
+      throw new Error("attested quote token mismatch: quote.token must match order.token");
     }
   }
 
@@ -135,8 +137,8 @@ export class HfiPayClient {
   /**
    * EVM: returns approve (ERC-20 only) + deposit txs for wagmi `sendTransaction` / WalletConnect.
    *
-   * If quote includes attested fields (`attestedContract`, `attestedOrder`),
-   * builds a permissionless attested deposit (no portal signature required).
+   * Requires attested fields (`attestedContract`, `attestedOrder`) and builds a
+   * permissionless attested deposit (no portal signature required).
    */
   prepareEvmTransactions(params: {
     quote: PaymentQuote;
@@ -146,37 +148,30 @@ export class HfiPayClient {
   }): { approve: ReturnType<typeof buildEvmApproveRequest> | null; deposit: ReturnType<typeof buildEvmAttestedDepositRequest> } {
     const q = params.quote;
     if (q.ecosystem !== "evm") throw new Error("quote ecosystem must be evm");
-    const token = q.token as Address;
     const isAttested = Boolean(q.attestedContract && q.attestedOrder);
 
     if (isAttested) {
       this.assertAttestedOrderComplete(q);
       const attestedContract = q.attestedContract as Address;
       const o = q.attestedOrder;
+      const orderToken = o.token as Address;
       const deposit = buildEvmAttestedDepositRequest({
         depositContract: attestedContract,
-        order: { ...o, token: o.token as Address },
+        order: { ...o, token: orderToken },
         originRelayAddress: params.originRelayAddress,
       });
-      if (isNativeEvmToken(token)) {
+      if (isNativeEvmToken(orderToken)) {
         return { approve: null, deposit };
       }
       const approve = buildEvmApproveRequest({
-        token,
+        token: orderToken,
         depositContract: attestedContract,
         amount: q.attestedOrder.amount,
       });
       return { approve, deposit };
     }
 
-    const amount = BigInt(q.amount);
-    const paymentRef = q.paymentRef as Hex;
-    const depositContract = (q.depositContract ?? params.depositContract) as Address | undefined;
-    if (!depositContract) throw new Error("depositContract required (quote or param)");
-    const deposit = buildEvmDepositRequest({ depositContract, paymentRef, token, amount });
-    if (isNativeEvmToken(token)) return { approve: null, deposit };
-    const approve = buildEvmApproveRequest({ token, depositContract, amount });
-    return { approve, deposit };
+    throw new Error("attested EVM quote required: quote must include attestedContract and attestedOrder");
   }
 
   /**

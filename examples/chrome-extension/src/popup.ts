@@ -11,7 +11,6 @@ import { privateKeyToAccount } from "viem/accounts";
 import {
   buildEvmAttestedDepositRequest,
   buildEvmApproveRequest,
-  buildEvmDepositRequest,
   isNativeEvmToken,
   type AttestedOrder,
 } from "../../../src/evm/prepareEvmDeposit.js";
@@ -226,17 +225,7 @@ async function handleSend() {
       showStatus("Sending deposit…", "info");
       txHash = await ctx.walletClient.sendTransaction({ to: deposit.to, data: deposit.data as Hex, value: deposit.value });
     } else {
-      // Legacy deposit flow
-      const tokenAddr = (q.order?.token ?? "0x0000000000000000000000000000000000000000") as Address;
-      const depositAmt = BigInt(q.order?.amount ?? amountWei);
-      if (!isNativeEvmToken(tokenAddr)) {
-        const approve = buildEvmApproveRequest({ token: tokenAddr, depositContract, amount: depositAmt });
-        showStatus("Approving ERC-20…", "info");
-        await ctx.walletClient.sendTransaction({ to: approve.to, data: approve.data as Hex, value: approve.value });
-      }
-      const deposit = buildEvmDepositRequest({ depositContract, paymentRef: q.paymentRef, token: tokenAddr, amount: depositAmt });
-      showStatus("Sending deposit…", "info");
-      txHash = await ctx.walletClient.sendTransaction({ to: deposit.to, data: deposit.data as Hex, value: deposit.value });
+      throw new Error("Attested quote required: quote must include attestedContract and order");
     }
 
     const claimUrl = `${portal}/claim?ref=${encodeURIComponent(q.paymentRef)}`;
