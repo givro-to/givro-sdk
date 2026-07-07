@@ -6,6 +6,8 @@
 
 接收方不需要任何特殊钱包支持——用户收到通知后打开网页，用任意标准钱包签名 claim 即可。
 
+SDK 使用 `vm` / `ecosystem` 字段选择结算虚拟机：`evm`、`solana` 或 `tron`。EVM 的具体网络通过 `chainId` 指定；某条链或某个 token 是否可用，取决于对应 HFI Portal 部署配置，而不是 SDK 客户端硬编码。
+
 ## 安装
 
 ```bash
@@ -296,4 +298,4 @@ const lamports  = toBaseUnits('0.01', 9);  // SOL:  '10000000'
 - `token` 对原生 SOL 传 `'SOL'` 或 `'11111111111111111111111111111111'`；对 native ETH 传 `'0x0000000000000000000000000000000000000000'`
 - 报价有有效期（`solanaOrder.claimBefore` / `attestedOrder.claimBefore`），超时需重新报价
 - deposit 上链后 Portal indexer 自动检测，通常 5-10 秒内触发通知
-- `vm` 字段（或其别名 `ecosystem`）必须传，用于路由到正确的链后端
+- `vm` 字段（或其别名 `ecosystem`）必须传，用于路由到正确的链后端；生产支持范围以 Portal 的链和 token 配置为准

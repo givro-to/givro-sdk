@@ -18,8 +18,8 @@ Base URL: `https://hfi.network`
   identifierKind: 'email' | 'x' | 'phone';
   amountWei: string;          // 最小单位金额（字符串）
   token: string;              // SPL mint base58 / EVM 0x addr / 'SOL' / 'ETH'
-  vm?: 'solana' | 'evm';  // 目标链（推荐，取代 ecosystem）
-  ecosystem?: 'solana' | 'evm';   // vm 的别名，两者效果相同
+  vm?: 'solana' | 'evm' | 'tron';  // 目标 VM（推荐，取代 ecosystem）
+  ecosystem?: 'solana' | 'evm' | 'tron';   // vm 的别名，两者效果相同
   chainId?: number;           // EVM only
   cancelWindowSec?: number;   // 取消窗口（秒），默认/服务端最小 360；合约硬下限 300
 }
@@ -32,7 +32,7 @@ Base URL: `https://hfi.network`
   paymentRef: string;         // '0x' + 32字节 hex，唯一标识此笔付款
   amount: string;             // 最小单位金额
   token: string;
-  ecosystem: 'solana' | 'evm';
+  ecosystem: 'solana' | 'evm' | 'tron';
   chainId?: number;
 
   // Solana 专有（raw response 在 `order` key 下，SDK 重映射到 solanaOrder）

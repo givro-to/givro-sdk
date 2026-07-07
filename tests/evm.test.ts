@@ -5,9 +5,10 @@ import {
   buildEvmApproveRequest,
   buildEvmAttestedDepositRequest,
 } from "../src/evm/prepareEvmDeposit.js";
+import { tronAttestedOrderTupleFromQuote } from "../src/tron/prepareTronAttestedDeposit.js";
 import { hfipayClaimDigestEvm } from "../src/evm/claimDigest.js";
-import { ZERO_ADDRESS } from "../src/evm/abi.js";
-import type { Address, Hex } from "viem";
+import { HFI_PAY_ATTESTED_V1_ABI, ZERO_ADDRESS } from "../src/evm/abi.js";
+import { decodeFunctionData, encodeFunctionData, type Address, type Hex } from "viem";
 
 const DEPOSIT_CONTRACT = "0xdEADbeEF00000000000000000000000000000001" as Address;
 const ERC20_TOKEN = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" as Address; // USDC
@@ -78,6 +79,51 @@ describe("buildEvmAttestedDepositRequest", () => {
     expect(req.to.toLowerCase()).toBe(DEPOSIT_CONTRACT.toLowerCase());
     expect(req.value).toBe(AMOUNT);
     expect(req.data.slice(0, 10)).toBe("0x5476871e");
+  });
+});
+
+describe("tronAttestedOrderTupleFromQuote", () => {
+  it("returns the tuple shape and order expected by HfiPayAttestedTron", () => {
+    const order = tronAttestedOrderTupleFromQuote({
+      paymentRef: PAYMENT_REF,
+      amount: AMOUNT.toString(),
+      token: ZERO_ADDRESS,
+      ecosystem: "tron",
+      chainId: 728126428,
+      attestedContract: DEPOSIT_CONTRACT,
+      attestedOrder: {
+        chainId: 728126428n,
+        paymentRef: PAYMENT_REF,
+        idHash: ("0x" + "cd".repeat(32)) as Hex,
+        token: ZERO_ADDRESS,
+        amount: AMOUNT,
+        cancelBefore: 1n,
+        claimBefore: 2n,
+        refundAfter: 3n,
+      },
+    });
+
+    expect(Object.keys(order)).toEqual([
+      "chainId",
+      "paymentRef",
+      "idHash",
+      "token",
+      "amount",
+      "cancelBefore",
+      "claimBefore",
+      "refundAfter",
+    ]);
+    expect(order.chainId).toBe("728126428");
+
+    const data = encodeFunctionData({
+      abi: HFI_PAY_ATTESTED_V1_ABI,
+      functionName: "depositNativeWithOrder",
+      args: [order as any, ZERO_ADDRESS],
+    });
+    const decoded = decodeFunctionData({ abi: HFI_PAY_ATTESTED_V1_ABI, data });
+    expect(decoded.functionName).toBe("depositNativeWithOrder");
+    expect((decoded.args[0] as { chainId: bigint }).chainId).toBe(728126428n);
+    expect((decoded.args[0] as { paymentRef: Hex }).paymentRef).toBe(PAYMENT_REF);
   });
 });
 

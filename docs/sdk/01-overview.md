@@ -38,7 +38,7 @@ fetchPaymentQuote()  ──────> 生成 paymentRef + idHash
                              （HMAC，Portal 持有密钥）         
 buildDepositTx()             
 wallet.sign()        
-sendTransaction()    ──────> Solana/EVM 链上                  
+sendTransaction()    ──────> vm/ecosystem 对应链上             
                              indexer 检测存款                  
                     ──────────────────────────────────────>  邮件/DM 通知
                                                              用户点链接
@@ -52,5 +52,6 @@ sendTransaction()    ──────> Solana/EVM 链上
 
 - **发送方无感知**：无需知道对方是否已有钱包，无需提前注册
 - **接收方零门槛**：任意标准钱包即可 claim，无需集成任何 SDK
+- **按 VM 路由**：发送方通过 `vm` / `ecosystem` 指定 `evm`、`solana` 或 `tron`，Portal 决定具体启用的链和 token
 - **Relay 自动 claim**：首次完成绑定后，后续 Portal relay 自动将资金转入绑定地址
 - **链上可验证**：IdentityBinding PDA 公开存储绑定关系，任何人可独立验证，无需信任 Portal

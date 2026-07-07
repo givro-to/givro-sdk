@@ -5,7 +5,7 @@
 | 文档 | 内容 |
 |------|------|
 | [01-overview.md](./01-overview.md) | 产品概述、核心流程、技术架构总览 |
-| [02-wallet-integration.md](./02-wallet-integration.md) | 钱包厂商集成指南（发送方，Solana + EVM 示例代码）|
+| [02-wallet-integration.md](./02-wallet-integration.md) | 钱包厂商集成指南（发送方，按 `vm` / `ecosystem` 集成 EVM、Solana、Tron）|
 | [03-claim-flow.md](./03-claim-flow.md) | 接收方 claim 流程、relay 自动 claim、链上绑定 |
 | [04-api-reference.md](./04-api-reference.md) | Portal API 端点、SDK 函数签名、合约常量 |
 | [06-architecture-decisions.md](./06-architecture-decisions.md) | 架构决策记录（ADR），关键设计选择的背景和权衡 |
@@ -29,6 +29,8 @@ npm install hfi-sdk
 npm install @solana/web3.js @solana/spl-token   # Solana
 npm install viem                                  # EVM
 ```
+
+SDK 按 `vm` / `ecosystem` 路由支付能力，目前类型层支持 `evm`、`solana`、`tron`。具体某条链、某个 token 是否可用于生产，由对应 HFI Portal 部署的配置决定。
 
 ## 核心概念
 

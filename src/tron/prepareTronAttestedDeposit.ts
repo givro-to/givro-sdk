@@ -11,13 +11,14 @@ export { HFI_PAY_ATTESTED_V1_ABI as HFI_PAY_ATTESTED_ABI_TRON };
  * (Solidity names are historical; Tron uses the same ABI).
  */
 export interface TronAttestedOrderTuple {
+  chainId: number | string;
+  paymentRef: string;
   idHash: string;
-  amount: string;
   token: string;
+  amount: string;
   cancelBefore: number | string;
   claimBefore: number | string;
   refundAfter: number | string;
-  paymentRef: string;
 }
 
 export function assertTronAttestedQuote(
@@ -43,12 +44,13 @@ export function tronAttestedOrderTupleFromQuote(quote: PaymentQuote): TronAttest
   assertTronAttestedQuote(quote);
   const o = quote.attestedOrder;
   return {
+    chainId: o.chainId.toString(),
+    paymentRef: o.paymentRef,
     idHash: o.idHash,
-    amount: o.amount.toString(),
     token: o.token,
+    amount: o.amount.toString(),
     cancelBefore: o.cancelBefore.toString(),
     claimBefore: o.claimBefore.toString(),
     refundAfter: o.refundAfter.toString(),
-    paymentRef: o.paymentRef,
   };
 }

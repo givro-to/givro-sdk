@@ -2,10 +2,10 @@
 
 **License:** MIT  
 **Package:** TypeScript / ESM SDK  
-**Current production networks:** Base and Tron  
-**Status:** Mainnet pilot; Solana helpers are retained for future reactivation.
+**Supported settlement VMs:** EVM, Tron, and Solana helpers  
+**Status:** Mainnet pilot; production availability is determined by the HFI Portal configuration for each `vm` / `ecosystem`, `chainId`, and token.
 
-TypeScript SDK for [HFI.Network](https://hfi.network) — send crypto to an email address, X handle, or phone number. The current mainnet pilot focuses on Base and Tron. Solana helpers remain in the package for future reactivation, but Solana is not part of the current production rollout.
+TypeScript SDK for [HFI.Network](https://hfi.network) — send crypto to an email address, X handle, or phone number. The SDK routes requests by `vm` / `ecosystem` (`"evm"`, `"tron"`, or `"solana"`) and forwards `chainId` to the quote service where applicable. The client library does not hard-code a single EVM network; actual production support is controlled by the HFI Portal deployment and its enabled chains/tokens.
 
 ## Install
 
@@ -13,10 +13,10 @@ TypeScript SDK for [HFI.Network](https://hfi.network) — send crypto to an emai
 npm install hfi-sdk
 # peer deps (install what you need)
 npm install viem                         # EVM
-npm install @solana/web3.js @solana/spl-token  # Optional: Solana helpers, currently paused for mainnet
+npm install @solana/web3.js @solana/spl-token  # Optional: Solana helpers
 ```
 
-## Quick start — Base / EVM (viem / wagmi)
+## Quick start — EVM (viem / wagmi)
 
 ```typescript
 import { createHfiPayClient } from "hfi-sdk";
@@ -33,7 +33,7 @@ const quote = await client.quoteSend({
   amount: "10000000000000000", // base units string (0.01 ETH in wei)
   token: "0x0000000000000000000000000000000000000000", // native ETH
   vm: "evm",
-  chainId: 8453, // Base mainnet
+  chainId: 8453, // EVM chain ID enabled by your HFI Portal deployment
 });
 
 // 2. Build send transactions
@@ -61,7 +61,7 @@ const quote = await client.quoteSend({
   recipientKind: "x",
   recipient: "@alice",
   amount: "50000000", // base units string (e.g. 50 USDC with 6 decimals)
-  token: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",  // USDC on Base
+  token: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",  // example ERC-20 token address
   vm: "evm",
   chainId: 8453,
 });
@@ -99,7 +99,7 @@ const orderTuple = client.tronAttestedOrderTuple(quote);
 
 ## Solana status
 
-Solana SDK helpers are retained for compatibility and future release, but Solana is intentionally paused for the current mainnet pilot. Do not present Solana as a production-supported settlement network unless the portal has explicitly re-enabled Solana configuration.
+Solana SDK helpers are retained in the package and use the same `vm` / `ecosystem` routing model. Treat Solana production availability as a Portal configuration question: do not present Solana as live for a deployment unless that Portal has enabled Solana program, mint, and quote support.
 
 ```typescript
 import { createHfiPayClient, signAndSendSolanaAttestedDeposit } from "hfi-sdk";
