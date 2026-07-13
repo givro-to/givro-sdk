@@ -7,6 +7,23 @@
 
 TypeScript SDK for [HFI.Network](https://hfi.network) — send crypto to an email address, X handle, or phone number. The SDK routes requests by `vm` / `ecosystem` (`"evm"`, `"tron"`, or `"solana"`) and forwards `chainId` to the quote service where applicable. The client library does not hard-code a single EVM network; actual production support is controlled by the HFI Portal deployment and its enabled chains/tokens.
 
+## Network Scope
+
+The current verified mainnet pilot is Base + Tron. The production-launch target
+for the SDK and integrator surfaces is:
+
+- Ethereum, Base, Arbitrum One, OP Mainnet (Optimism), Polygon PoS, BNB Smart
+  Chain, and Avalanche C-Chain;
+- Solana mainnet;
+- Tron mainnet.
+
+SDK support means the library can represent and prepare the relevant ecosystem
+flow; it does not by itself mean a network is live. Integrators must use the
+Portal's enabled network/token configuration and must not expose a target
+network before its contract/program, quote, indexing, wallet, and complete
+claim/cancel/refund lifecycle are production-approved. Native assets are
+first-class per network; token support is an explicit per-network allowlist.
+
 ## Install
 
 ```bash
@@ -97,9 +114,13 @@ const orderTuple = client.tronAttestedOrderTuple(quote);
 // Pass orderTuple to TronWeb contract.depositErc20WithOrder(...).
 ```
 
-## Solana status
+## Solana Status
 
-Solana SDK helpers are retained in the package and use the same `vm` / `ecosystem` routing model. Treat Solana production availability as a Portal configuration question: do not present Solana as live for a deployment unless that Portal has enabled Solana program, mint, and quote support.
+Solana is part of the production-launch target. Solana SDK helpers are retained
+in the package and use the same `vm` / `ecosystem` routing model. Treat Solana
+production availability as a Portal configuration question: do not present
+Solana as live for a deployment unless that Portal has enabled and verified the
+Solana program, mint registry, quote, wallet, indexing, and lifecycle support.
 
 ```typescript
 import { createHfiPayClient, signAndSendSolanaAttestedDeposit } from "hfi-sdk";
