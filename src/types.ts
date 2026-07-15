@@ -15,9 +15,11 @@ export interface QuoteRequestBody {
   amount?: string;
   /**
    * Token identifier. Accepts:
-   *  - EVM: checksummed `0x` address, or well-known symbol ("GO", "ETH", "USDC", …)
+   *  - EVM: checksummed `0x` token address, or a native symbol such as ETH
    *  - Solana: base58 mint address, or "SOL" for native SOL
-   *  - Tron: TRC20 contract (base58) or native asset id from portal config
+   *  - Tron: TRC20 contract (base58), or "TRX" for native TRX
+   * Non-native symbols are not independently resolvable by the SDK and must be
+   * converted through an application-owned, reviewed asset registry first.
    */
   token: string;
   /** Deprecated alias for `vm`. If both present, `vm` takes precedence. */
@@ -72,7 +74,7 @@ export interface PaymentQuote {
   };
 
   // ── Solana ────────────────────────────────────────────────────────────────
-  /** Solana: program ID (base58). Defaults to DEFAULT_HFI_PAY_PROGRAM_ID when absent. */
+  /** Solana: program ID (base58). Required and independently pinned by the client. */
   programId?: string;
   /** Solana: order parameters (idHash computed server-side, times are unix seconds as strings). */
   solanaOrder?: {
@@ -114,7 +116,7 @@ export interface RetryOptions {
 }
 
 export interface HfiPayClientConfig {
-  /** e.g. `https://hfi.network/api/portal/v1/quote` (EVM legacy) or any quote URL for non-Tron VMs */
+  /** e.g. `https://hfi.network/api/intent/quote` */
   quoteUrl: string;
   /**
    * Explicit `POST /api/intent/quote` URL (Tron + Send-page shape).
@@ -132,6 +134,14 @@ export interface HfiPayClientConfig {
   /** Timeout for each quote HTTP request in ms. Default: 10 000. */
   timeoutMs?: number;
   retry?: RetryOptions;
+  /**
+   * Pinned attested-contract allowlist keyed by `${ecosystem}:${chainId}`.
+   * Transaction builders fail closed when the quote contract is not pinned.
+   * Example: `{ "evm:8453": ["0x..."] }`.
+   */
+  trustedAttestedContracts?: Readonly<Record<string, readonly string[]>>;
+  /** Pinned Solana program allowlist keyed by cluster name, e.g. `mainnet-beta`. */
+  trustedSolanaPrograms?: Readonly<Record<string, readonly string[]>>;
 }
 
 export interface PrepareEvmSendParams {
@@ -149,7 +159,6 @@ export interface PrepareSolanaSendParams {
   amount: string;
   /** SPL mint base58, or "SOL" for native SOL (not yet supported — use SPL wrapped SOL) */
   mint: string;
-  /** Override program ID (base58). Falls back to quote.programId then DEFAULT_HFI_PAY_PROGRAM_ID. */
-  programId?: string;
+  /** Build-reviewed cluster whose configured program must match the quote. */
+  cluster: string;
 }
-

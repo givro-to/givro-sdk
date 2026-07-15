@@ -34,9 +34,12 @@ describe("partner integration flow", () => {
       },
     }));
     const client = createHfiPayClient({
-      quoteUrl: "https://partner.hfi.network/api/portal/v1/quote",
+      quoteUrl: "https://partner.hfi.network/api/intent/quote",
       fetchImpl: mockFetch,
       defaultHeaders: { "X-API-Key": "partner_test_key" },
+      trustedAttestedContracts: {
+        "evm:8453": ["0xdeadbeef00000000000000000000000000000002"],
+      },
     });
 
     const quote = await client.quoteSend({
@@ -54,7 +57,7 @@ describe("partner integration flow", () => {
 
     const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(String(init.body)) as Record<string, unknown>;
-    expect(url).toBe("https://partner.hfi.network/api/portal/v1/quote");
+    expect(url).toBe("https://partner.hfi.network/api/intent/quote");
     expect((init.headers as Record<string, string>)["X-API-Key"]).toBe("partner_test_key");
     expect(body.identifier).toBe("alice@example.com");
     expect(body.identifierKind).toBe("email");
@@ -89,10 +92,13 @@ describe("partner integration flow", () => {
       },
     }));
     const client = createHfiPayClient({
-      quoteUrl: "https://partner.hfi.network/api/portal/v1/quote",
+      quoteUrl: "https://partner.hfi.network/api/intent/quote",
       portalBaseUrl: "https://partner.hfi.network/",
       fetchImpl: mockFetch,
       defaultHeaders: { "X-API-Key": "partner_test_key" },
+      trustedAttestedContracts: {
+        "tron:728126428": ["0x00000000000000000000000000000000000000aa"],
+      },
     });
 
     const quote = await client.quoteSend({

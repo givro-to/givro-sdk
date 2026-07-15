@@ -1,5 +1,7 @@
 # API 参考
 
+> Schema 中保留 `phone` 和 `solana` 以支持后续集成；当前公开主网试点只启用 Base + Tron 上的 Email + X handle 流程。集成方必须以 Portal 实际启用配置为准。
+
 ## Portal 端点
 
 Base URL: `https://hfi.network`
@@ -155,6 +157,8 @@ const client = createHfiPayClient({
   defaultHeaders?: HeadersInit;
   timeoutMs?: number;
   retry?: RetryOptions;
+  trustedAttestedContracts?: Readonly<Record<string, readonly string[]>>;
+  trustedSolanaPrograms?: Readonly<Record<string, readonly string[]>>;
 });
 ```
 
@@ -162,61 +166,16 @@ const client = createHfiPayClient({
 
 - `client.fetchQuote(body)` — 底层报价，传入 QuoteRequestBody
 - `client.quoteSend(params)` — 更易用的报价接口，含 normalizeRecipient
-- `client.prepareEvmTransactions({ quote, originRelayAddress? })` — 要求 attested EVM quote，返回 `{ approve, deposit }` tx 对象
-- `client.prepareSolanaTransaction(connection, { quote, payer, recentBlockhash?, originRelayAddress? })` — 返回 VersionedTransaction
+- `client.prepareEvmTransactions({ quote, originRelayAddress? })` — 要求 attested EVM quote 且合约位于 `trustedAttestedContracts`，返回 `{ approve, deposit }` tx 对象
+- `client.prepareSolanaTransaction(connection, { quote, payer, cluster, recentBlockhash?, originRelayAddress? })` — 要求报价 Program 位于 `trustedSolanaPrograms[cluster]`，返回 VersionedTransaction
 
 ---
 
-### buildSolanaAttestedDepositTransaction
+### 资金交易低层构造器
 
-```typescript
-import { buildSolanaAttestedDepositTransaction, type AttestedSolanaOrder } from 'hfi-sdk';
-
-async function buildSolanaAttestedDepositTransaction(
-  _connection: unknown,       // 兼容参数，当前实现不需要 RPC（纯本地构建）
-  params: {
-    programId: PublicKey;
-    payer: PublicKey;
-    order: AttestedSolanaOrder;
-    originRelayAddress?: PublicKey;  // relay 节点（fee attribution），omit = 无
-    recentBlockhash: string;
-  }
-): Promise<VersionedTransaction>
-
-interface AttestedSolanaOrder {
-  paymentRef: Uint8Array;   // 32 bytes
-  idHash: Uint8Array;       // 32 bytes
-  mint: PublicKey;          // PublicKey.default 或 SystemProgram.programId 表示原生 SOL
-  amount: bigint;
-  cancelBefore: bigint;
-  claimBefore: bigint;
-  refundAfter: bigint;
-}
-```
-
-> **注意**：`_connection` 参数仅为 API 兼容性保留，函数不发起任何 RPC 调用，所有 PDA 纯本地推导。
-
----
-
-### signAndSendSolanaAttestedDeposit
-
-```typescript
-import { signAndSendSolanaAttestedDeposit, type SolanaWalletLike } from 'hfi-sdk';
-
-async function signAndSendSolanaAttestedDeposit(
-  wallet: SolanaWalletLike,       // @solana/wallet-adapter WalletContextState
-  connection: Connection,
-  params: Parameters<typeof buildSolanaAttestedDepositTransaction>[1]
-): Promise<{ signature: string }>
-
-// SolanaWalletLike 接口（与 wallet-adapter WalletContextState 兼容）：
-interface SolanaWalletLike {
-  signTransaction?: <T extends VersionedTransaction>(tx: T) => Promise<T>;
-  sendTransaction?: (tx: VersionedTransaction, connection: Connection) => Promise<string>;
-}
-```
-
-> **注意**：参数顺序是 `wallet` 在前，`connection` 在后，与 wallet-adapter 的惯例一致。
+包根不导出接受任意结算合约或 Solana Program 的资金构造器。应用必须通过
+`HfiPayClient` 的 pinned builder 构造交易；生命周期辅助函数不受此限制，因为它们不创建
+新的 token allowance 或资金存款。
 
 ---
 
@@ -236,46 +195,10 @@ async function waitForSolanaConfirmation(
 
 ---
 
-### buildEvmAttestedDepositRequest / buildEvmApproveRequest
-
-```typescript
-import { buildEvmAttestedDepositRequest, buildEvmApproveRequest, isNativeEvmToken } from 'hfi-sdk';
-
-// EVM attested deposit（permissionless，无需 portal 签名）
-function buildEvmAttestedDepositRequest(params: {
-  depositContract: Address;
-  order: AttestedOrder;
-  originRelayAddress?: Address;
-}): EvmTxRequest   // { to, data, value }
-
-// ERC-20 approve
-function buildEvmApproveRequest(params: {
-  token: Address;
-  depositContract: Address;
-  amount: bigint;
-  approveAmount?: bigint;  // 默认 maxUint256
-}): EvmTxRequest
-
-interface AttestedOrder {
-  chainId: bigint;
-  paymentRef: Hex;
-  idHash: Hex;
-  token: Address;
-  amount: bigint;
-  cancelBefore: bigint;
-  claimBefore: bigint;
-  refundAfter: bigint;
-}
-```
-
----
-
 ### 其他 EVM 工具函数
 
 ```typescript
 import {
-  buildEvmAttestedDepositRequest, // 当前 Rail 1 attested deposit
-  buildEvmDepositRequest,    // deprecated: legacy/basic HfiPayDeposit only
   buildEvmCancelRequest,     // 发送方取消
   buildEvmRefundTx,          // 退款
   buildEvmBindTx,            // 绑定钱包地址到 idHash

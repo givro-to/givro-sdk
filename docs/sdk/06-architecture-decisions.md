@@ -28,7 +28,7 @@ Portal 提供 `POST /api/intent/build-solana-tx` 端点，
 
 - ✅ 钱包零依赖，接入成本极低
 - ✅ 未签名 tx 对用户无风险（Portal 无法代替用户签名）
-- ⚠️ 有 `@solana/web3.js` 的钱包可以用 SDK 的 `buildSolanaAttestedDepositTransaction` 直接本地构建，无需依赖 Portal 此端点
+- 有 `@solana/web3.js` 的钱包应使用 `HfiPayClient.prepareSolanaTransaction` 本地构建，并通过 `trustedSolanaPrograms` 独立验证 Program ID
 
 ---
 
@@ -136,7 +136,7 @@ if (isEmail(input) || isXHandle(input)) {
 
 ```typescript
 const client = createHfiPayClient({
-  quoteUrl: "https://hfi.network/api/portal/v1/quote",
+  quoteUrl: "https://hfi.network/api/intent/quote",
   defaultRelayAddress: "0xYourRelayAddress", // EVM
   // 或 Solana pubkey base58
 });

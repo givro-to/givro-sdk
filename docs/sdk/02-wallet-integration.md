@@ -1,5 +1,7 @@
 # 钱包厂商集成指南
 
+> 当前已验证的真实资金主网试点为 Base + Tron，公开标识符流程为 Email + X handle。手机号、Solana 和其他主流 EVM 网络仅为生产发布目标；以下 Solana 或手机号示例不得用于生产，除非 Portal 配置与专项发布审核明确启用对应能力。
+
 ## 集成定位
 
 **钱包厂商只需要集成「发送」方向。**
@@ -27,7 +29,10 @@ import { createHfiPayClient } from 'hfi-sdk';
 import { Connection, PublicKey } from '@solana/web3.js';
 
 const client = createHfiPayClient({
-  quoteUrl: 'https://hfi.network/api/intent/quote',
+  quoteUrl: 'http://localhost:3100/api/intent/quote',
+  trustedSolanaPrograms: {
+    devnet: ['REVIEWED_DEVNET_SOLANA_PROGRAM_ID'],
+  },
 });
 
 async function sendViaHfiPay(params: {
@@ -52,6 +57,7 @@ async function sendViaHfiPay(params: {
   const tx = await client.prepareSolanaTransaction(params.connection, {
     quote,
     payer: params.payerPublicKey,
+    cluster: 'devnet',
   });
 
   // 3. 钱包签名并提交（标准 Ed25519，与普通转账无区别）
@@ -60,130 +66,18 @@ async function sendViaHfiPay(params: {
 }
 ```
 
-### 底层 API（直接用 buildSolanaAttestedDepositTransaction）
+### Solana 交易构造安全要求
 
-如果你需要更细粒度的控制，可以直接调用底层构建函数：
-
-```typescript
-import {
-  fetchPaymentQuote,
-  buildSolanaAttestedDepositTransaction,
-  paymentRefHexToBytes,
-  DEFAULT_HFI_PAY_PROGRAM_ID,
-} from 'hfi-sdk';
-import { Connection, PublicKey } from '@solana/web3.js';
-
-// 1. 拿报价
-const quote = await fetchPaymentQuote(
-  'https://hfi.network/api/intent/quote',
-  {
-    identifier: 'alice@gmail.com',
-    identifierKind: 'email',
-    amountWei: '1000000',    // 1 USDC
-    token: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
-    vm: 'solana',
-  }
-);
-
-// quote.solanaOrder 包含 idHash、cancelBefore、claimBefore、refundAfter
-const sol = quote.solanaOrder!;
-
-// 2. 构建 deposit 交易
-const { blockhash } = await connection.getLatestBlockhash();
-const tx = await buildSolanaAttestedDepositTransaction(connection, {
-  programId: new PublicKey(quote.programId ?? DEFAULT_HFI_PAY_PROGRAM_ID),
-  payer: payerPublicKey,
-  order: {
-    paymentRef: paymentRefHexToBytes(quote.paymentRef),  // 32 bytes Uint8Array
-    idHash:     paymentRefHexToBytes(sol.idHash),         // 32 bytes Uint8Array
-    mint:       new PublicKey(quote.token),
-    amount:     BigInt(quote.amount),
-    cancelBefore: BigInt(sol.cancelBefore),
-    claimBefore:  BigInt(sol.claimBefore),
-    refundAfter:  BigInt(sol.refundAfter),
-  },
-  recentBlockhash: blockhash,
-});
-
-// 3. 钱包自己签名
-const signature = await wallet.sendTransaction(tx, connection);
-```
-
-### 使用 wallet-adapter 的一步式 API
-
-```typescript
-import {
-  fetchPaymentQuote,
-  signAndSendSolanaAttestedDeposit,
-  paymentRefHexToBytes,
-  DEFAULT_HFI_PAY_PROGRAM_ID,
-} from 'hfi-sdk';
-import { useConnection, useWallet } from '@solana/wallet-adapter-react';
-import { PublicKey } from '@solana/web3.js';
-
-const { connection } = useConnection();
-const wallet = useWallet();
-
-const quote = await fetchPaymentQuote(...);
-const sol = quote.solanaOrder!;
-const { blockhash } = await connection.getLatestBlockhash();
-
-const { signature } = await signAndSendSolanaAttestedDeposit(
-  wallet,      // 注意：wallet 在前，connection 在后
-  connection,
-  {
-    programId: new PublicKey(quote.programId ?? DEFAULT_HFI_PAY_PROGRAM_ID),
-    payer: wallet.publicKey!,
-    order: {
-      paymentRef: paymentRefHexToBytes(quote.paymentRef),
-      idHash:     paymentRefHexToBytes(sol.idHash),
-      mint:       new PublicKey(quote.token),
-      amount:     BigInt(quote.amount),
-      cancelBefore: BigInt(sol.cancelBefore),
-      claimBefore:  BigInt(sol.claimBefore),
-      refundAfter:  BigInt(sol.refundAfter),
-    },
-    recentBlockhash: blockhash,
-  }
-);
-```
+Solana 资金交易必须通过 `client.prepareSolanaTransaction` 构造，并同时传入构建审核过的
+cluster。客户端配置中的 `trustedSolanaPrograms[cluster]` 是独立信任根；报价响应不能决定
+Program ID。为避免集成方绕过该约束，包根不再导出接受任意 Program ID 的底层资金构造器。
 
 ### 轻量方案（无 @solana/web3.js）
 
-如果钱包环境没有 `@solana/web3.js`（如浏览器扩展），可以让 Portal 构建未签名 tx，钱包只负责签名：
+如果钱包环境无法在本地验证完整指令和可信 Program，不得直接签署 Portal 返回的未签名
+交易。应在钱包侧增加等价的 Program、mint、金额和账户权限校验后再启用该方案。
 
-```typescript
-// 1. 拿报价（不需要 SDK，直接 fetch）
-const quote = await fetch('https://hfi.network/api/intent/quote', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    identifier: 'alice@gmail.com',
-    identifierKind: 'email',
-    amountWei: '1000000',
-    token: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
-    vm: 'solana',
-  }),
-}).then(r => r.json());
-
-// 2. 获取 blockhash（通过 Solana RPC）
-const { blockhash } = await solanaRpc('getLatestBlockhash');
-
-// 3. 让 Portal 构建未签名 tx
-const { txBase64 } = await fetch('https://hfi.network/api/intent/build-solana-tx', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    paymentRef: quote.paymentRef,
-    payerAddress: payerPublicKeyBase58,
-    recentBlockhash: blockhash,
-  }),
-}).then(r => r.json());
-
-// 4. 钱包签名（Ed25519，标准）并提交
-const signedBase64 = walletSign(txBase64);
-await solanaRpc('sendTransaction', [signedBase64, { encoding: 'base64' }]);
-```
+当前包不提供无法独立验证交易的轻量签名捷径；集成方应保留本地交易解析能力或保持该链关闭。
 
 ## EVM 集成
 
@@ -194,6 +88,9 @@ import { createHfiPayClient } from 'hfi-sdk';
 
 const client = createHfiPayClient({
   quoteUrl: 'https://hfi.network/api/intent/quote',
+  trustedAttestedContracts: {
+    'evm:8453': ['0xREVIEWED_BASE_ATTESTED_CONTRACT'],
+  },
 });
 
 const quote = await client.quoteSend({
@@ -202,7 +99,7 @@ const quote = await client.quoteSend({
   vm: 'evm',
   amount: '10000000000000000',   // 0.01 ETH in wei
   token: '0x0000000000000000000000000000000000000000',  // native ETH
-  chainId: 1,
+  chainId: 8453,
 });
 
 // Attested quote required; returns approve (仅 ERC-20) + deposit tx
@@ -213,47 +110,13 @@ if (approve) await sendTransactionAsync(approve);
 await sendTransactionAsync(deposit);
 ```
 
-### 底层 API
+### 交易构造安全边界
 
-```typescript
-import {
-  fetchPaymentQuote,
-  buildEvmAttestedDepositRequest,
-  buildEvmApproveRequest,
-  isNativeEvmToken,
-} from 'hfi-sdk';
-
-const quote = await fetchPaymentQuote(
-  'https://hfi.network/api/intent/quote',
-  {
-    identifier: 'alice@gmail.com',
-    identifierKind: 'email',
-    amountWei: '10000000000000000',
-    token: '0x0000000000000000000000000000000000000000',
-    vm: 'evm',
-    chainId: 1,
-  }
-);
-
-// 构建 EVM deposit 调用数据（permissionless attested flow，无需 portal 签名）
-const deposit = buildEvmAttestedDepositRequest({
-  depositContract: quote.attestedContract!,
-  order: quote.attestedOrder!,
-});
-
-// ERC-20 还需要先 approve
-const token = quote.token as `0x${string}`;
-if (!isNativeEvmToken(token)) {
-  const approve = buildEvmApproveRequest({
-    token,
-    depositContract: quote.attestedContract!,
-    amount: quote.attestedOrder!.amount,
-  });
-  await wallet.sendTransaction(approve);
-}
-
-await wallet.sendTransaction(deposit);
-```
+应用必须通过 `HfiPayClient.prepareEvmTransactions` 或
+`HfiPayClient.prepareSolanaTransaction` 构造资金交易，并在客户端配置经过发布审核的
+`trustedAttestedContracts` / `trustedSolanaPrograms`。SDK 不再从包根导出可直接接受
+报价返回地址的低层资金构造器，避免报价服务单独改变 spender、结算合约或 Solana
+Program。
 
 ## UI 建议
 

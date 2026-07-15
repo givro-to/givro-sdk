@@ -52,7 +52,9 @@ export function coercePaymentQuote(raw: Record<string, unknown>): PaymentQuote {
   const ref = (paymentRef.startsWith("0x") ? paymentRef : `0x${paymentRef}`) as `0x${string}`;
   // Support nested order object (HFI portal response shape)
   const order = (raw.order ?? {}) as Record<string, unknown>;
-  const amount = String(raw.amount ?? order.amount ?? "");
+  // Prefer atomic-unit fields. `raw.amount` can be a human-readable display
+  // label on intent quote endpoints and must never override the signed order.
+  const amount = String(raw.amountWei ?? order.amountWei ?? order.amount ?? raw.amount ?? "");
   if (!amount) throw new Error("quote: missing amount");
   const token = String(raw.token ?? order.token ?? "");
   if (!token) throw new Error("quote: missing token");

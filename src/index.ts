@@ -36,10 +36,7 @@ export {
   hfipayClaimDigestEvm,
 } from "./evm/claimDigest.js";
 export {
-  buildEvmApproveRequest,
-  buildEvmAttestedDepositRequest,
   buildEvmCancelRequest,
-  buildEvmDepositRequest,
   buildEvmBindTx,
   buildEvmRevokePendingTx,
   buildEvmClaimTx,
@@ -67,16 +64,11 @@ export {
   svmDestinationAuthBytes,
 } from "./solana/claimDigest.js";
 export { paymentRefHexToBytes } from "./solana/utils.js";
-export {
-  buildSolanaAttestedDepositTransaction,
-  type AttestedSolanaOrder,
-} from "./solana/prepareSolanaDeposit.js";
 export { HfiPayClient, createHfiPayClient } from "./client.js";
 export {
   TRON_ATTESTED_ZERO_RELAY,
   HFI_PAY_ATTESTED_ABI_TRON,
   assertTronAttestedQuote,
-  tronAttestedOrderTupleFromQuote,
   type TronAttestedOrderTuple,
 } from "./tron/prepareTronAttestedDeposit.js";
 export {
@@ -86,9 +78,3 @@ export {
   type WagmiSendParams,
   type WagmiWaitParams,
 } from "./evm/wagmiAdapter.js";
-export {
-  signAndSendSolanaAttestedDeposit,
-  waitForSolanaConfirmation,
-  type SolanaWalletLike,
-  type SolanaDepositResult,
-} from "./solana/walletAdapter.js";

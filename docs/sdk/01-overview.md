@@ -1,8 +1,10 @@
 # HFI Pay — 产品概述
 
+> 当前已验证的真实资金主网试点为 Base + Tron，公开标识符流程为 Email + X handle。本文中的手机号、Solana 与其他 EVM 网络能力描述为 SDK 架构及生产发布目标，不代表对应能力当前已上线。
+
 ## 是什么
 
-HFI Pay 是一套协议 + SDK，让钱包用户可以**直接把 crypto 发到 email 地址、X handle 或手机号**，无需知道对方的链上地址。
+HFI Pay 是一套协议 + SDK，让钱包用户可以**直接把 crypto 发到受支持的人类可读标识符**，无需预先知道对方的链上地址；当前公开流程支持 email 和 X handle。
 
 发送方体验和普通转账完全一样，唯一的区别是 recipient 字段填的是 `alice@gmail.com` 或 `@alice`，而不是 `7xKX...` 这样的地址。
 
@@ -11,7 +13,7 @@ HFI Pay 是一套协议 + SDK，让钱包用户可以**直接把 crypto 发到 e
 ### 发送方
 
 1. 用户在钱包里选择链、token、填写金额
-2. Recipient 字段填 email / X handle / 手机号
+2. Recipient 字段填写当前 Portal 启用的标识符（公开流程为 email / X handle）
 3. 钱包调用 HFI Pay SDK 拿报价，构建 deposit 交易
 4. 用户签名，交易上链
 5. 完成 ✅
@@ -52,6 +54,6 @@ sendTransaction()    ──────> vm/ecosystem 对应链上
 
 - **发送方无感知**：无需知道对方是否已有钱包，无需提前注册
 - **接收方零门槛**：任意标准钱包即可 claim，无需集成任何 SDK
-- **按 VM 路由**：发送方通过 `vm` / `ecosystem` 指定 `evm`、`solana` 或 `tron`，Portal 决定具体启用的链和 token
+- **按 VM 路由**：发送方通过 `vm` / `ecosystem` 指定 SDK 支持的虚拟机类型，Portal 决定当前实际启用并通过发布审核的链和 token
 - **Relay 自动 claim**：首次完成绑定后，后续 Portal relay 自动将资金转入绑定地址
 - **链上可验证**：IdentityBinding PDA 公开存储绑定关系，任何人可独立验证，无需信任 Portal

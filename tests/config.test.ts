@@ -14,10 +14,12 @@ describe("getNetwork", () => {
     expect(net.defaultQuoteUrl).toContain("localhost");
   });
 
-  it("returns testnet config with Sepolia chainId", () => {
+  it("returns testnet config with Base Sepolia chainId", () => {
     const net = getNetwork("testnet");
     expect(net.name).toBe("testnet");
-    expect(net.evmChainId).toBe(11155111);
+    expect(net.evmChainId).toBe(84532);
+    expect(net.solanaCluster).toBeUndefined();
+    expect(net.solanaProgramId).toBeUndefined();
   });
 
   it("testnet defaultQuoteUrl contains testnet.hfi.network", () => {
@@ -25,15 +27,13 @@ describe("getNetwork", () => {
     expect(net.defaultQuoteUrl).toContain("testnet.hfi.network");
   });
 
-  it("returns mainnet config with chainId 1", () => {
+  it("returns the current Base + Tron mainnet-pilot config", () => {
     const net = getNetwork("mainnet");
     expect(net.name).toBe("mainnet");
-    expect(net.evmChainId).toBe(1);
-  });
-
-  it("mainnet solanaCluster is mainnet-beta", () => {
-    const net = getNetwork("mainnet");
-    expect(net.solanaCluster).toBe("mainnet-beta");
+    expect(net.evmChainId).toBe(8453);
+    expect(net.tronChainId).toBe(728126428);
+    expect(net.solanaCluster).toBeUndefined();
+    expect(net.solanaProgramId).toBeUndefined();
   });
 
   it("mainnet defaultQuoteUrl contains hfi.network", () => {
@@ -45,11 +45,9 @@ describe("getNetwork", () => {
     expect(() => getNetwork("unknown" as NetworkName)).toThrow(/unknown hfi pay network/i);
   });
 
-  it("each network in NETWORKS has solanaProgramId set", () => {
-    for (const name of Object.keys(NETWORKS) as NetworkName[]) {
-      expect(NETWORKS[name].solanaProgramId).toBeTruthy();
-      expect(NETWORKS[name].solanaDepositProgramId).toBeTruthy();
-    }
+  it("does not advertise Solana in the mainnet preset before launch review", () => {
+    expect(NETWORKS.mainnet.solanaProgramId).toBeUndefined();
+    expect(NETWORKS.mainnet.solanaDepositProgramId).toBeUndefined();
   });
 
   it("intentQuoteUrlForPortal strips trailing slash", () => {

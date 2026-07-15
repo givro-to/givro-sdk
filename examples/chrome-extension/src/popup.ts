@@ -9,11 +9,10 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import {
-  buildEvmAttestedDepositRequest,
-  buildEvmApproveRequest,
+  createHfiPayClient,
   isNativeEvmToken,
-  type AttestedOrder,
-} from "../../../src/evm/prepareEvmDeposit.js";
+  ZERO_ADDRESS,
+} from "../../../src/index.js";
 
 // ── Persisted settings ────────────────────────────────────────────────────
 
@@ -157,76 +156,37 @@ async function handleSend() {
     const amountWei = parseUnits(amount, NATIVE_DECIMALS).toString();
 
     // ── 1. Quote ──────────────────────────────────────────────────────────
-    const identifier = kind === "x" ? recipient.replace(/^@/, "") : recipient;
-    const quoteRes = await fetch(`${portal}/api/portal/v1/quote`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        identifier,
-        identifierKind: kind,
-        amountWei,
-        token,
-        vm: "evm",
-        chainId,
-      }),
-    });
-    if (!quoteRes.ok) {
-      const err = await quoteRes.json().catch(() => ({})) as { error?: string };
-      throw new Error(`Quote failed: ${err.error ?? quoteRes.statusText}`);
+    const trustedContract = contractInput.value.trim() as Address;
+    if (!/^0x[0-9a-fA-F]{40}$/.test(trustedContract)) {
+      throw new Error("Set the build-reviewed deposit contract in Settings before sending.");
     }
-    const q = await quoteRes.json() as {
-      paymentRef: Hex;
-      order?: {
-        chainId: number;
-        paymentRef: Hex;
-        idHash: Hex;
-        token: Address;
-        amount: string;
-        cancelBefore: string;
-        claimBefore: string;
-        refundAfter: string;
-      };
-      attestedContract?: Address;
-      depositContract?: Address;
-    };
+    const client = createHfiPayClient({
+      quoteUrl: `${portal}/api/intent/quote`,
+      portalBaseUrl: portal,
+      trustedAttestedContracts: { [`evm:${chainId}`]: [trustedContract] },
+    });
+    const q = await client.quoteSend({
+      recipientKind: kind,
+      recipient: kind === "x" ? recipient.replace(/^@/, "") : recipient,
+      amount: amountWei,
+      token: ["GO", "ETH", "NATIVE"].includes(token.toUpperCase()) ? ZERO_ADDRESS : token,
+      vm: "evm",
+      chainId,
+    });
 
     // ── 2. Deposit transaction ────────────────────────────────────────────
     showStatus("Sending deposit transaction…", "info");
 
-    const depositContract = ((q.attestedContract ?? q.depositContract ?? contractInput.value.trim()) || "") as Address;
-    if (!depositContract || !depositContract.startsWith("0x")) {
-      throw new Error("No deposit contract address — set one in Settings or ensure the quote returns attestedContract.");
-    }
-
+    const { approve, deposit } = client.prepareEvmTransactions({ quote: q });
     let txHash: Hex;
-    if (q.order && q.attestedContract) {
-      // Attested flow (permissionless — no portal signature required)
-      const idHash = typeof q.order.idHash === "string" ? (q.order.idHash as Hex) : undefined;
-      if (!idHash) {
-        throw new Error("Attested quote missing order.idHash");
-      }
-      const order: AttestedOrder = {
-        chainId: BigInt(q.order.chainId),
-        paymentRef: q.order.paymentRef as Hex,
-        idHash,
-        token: q.order.token as Address,
-        amount: BigInt(q.order.amount),
-        cancelBefore: BigInt(q.order.cancelBefore),
-        claimBefore: BigInt(q.order.claimBefore),
-        refundAfter: BigInt(q.order.refundAfter),
-      };
-      const tokenAddr = order.token;
-      if (!isNativeEvmToken(tokenAddr)) {
-        const approve = buildEvmApproveRequest({ token: tokenAddr, depositContract, amount: order.amount });
+    if (!isNativeEvmToken(q.token)) {
+      if (approve) {
         showStatus("Approving ERC-20…", "info");
         await ctx.walletClient.sendTransaction({ to: approve.to, data: approve.data as Hex, value: approve.value });
       }
-      const deposit = buildEvmAttestedDepositRequest({ depositContract: q.attestedContract, order });
-      showStatus("Sending deposit…", "info");
-      txHash = await ctx.walletClient.sendTransaction({ to: deposit.to, data: deposit.data as Hex, value: deposit.value });
-    } else {
-      throw new Error("Attested quote required: quote must include attestedContract and order");
     }
+    showStatus("Sending deposit…", "info");
+    txHash = await ctx.walletClient.sendTransaction({ to: deposit.to, data: deposit.data as Hex, value: deposit.value });
 
     const claimUrl = `${portal}/claim?ref=${encodeURIComponent(q.paymentRef)}`;
     showStatus(`✓ Sent!\nTx: ${txHash}\nClaim: ${claimUrl}`, "ok");

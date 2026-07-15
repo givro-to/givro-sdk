@@ -1,5 +1,7 @@
 # HFI Pay SDK 文档
 
+> 当前已验证的真实资金主网试点为 Base + Tron，公开标识符流程为 Email + X handle。手机号、Solana 以及其他主流 EVM 网络属于生产发布目标，只有在对应流程完成发布审核后才可启用。
+
 ## 目录
 
 | 文档 | 内容 |
@@ -30,7 +32,7 @@ npm install @solana/web3.js @solana/spl-token   # Solana
 npm install viem                                  # EVM
 ```
 
-SDK 按 `vm` / `ecosystem` 路由支付能力，目前类型层支持 `evm`、`solana`、`tron`。具体某条链、某个 token 是否可用于生产，由对应 HFI Portal 部署的配置决定。
+SDK 按 `vm` / `ecosystem` 路由支付能力，类型层支持 `evm`、`solana`、`tron`。类型或构造器存在不代表对应网络已经上线；当前生产集成只能使用 Portal 实际返回并经发布审核的 Base + Tron 配置。
 
 ## 核心概念
 

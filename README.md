@@ -5,7 +5,7 @@
 **Supported settlement VMs:** EVM, Tron, and Solana helpers  
 **Status:** Mainnet pilot; production availability is determined by the HFI Portal configuration for each `vm` / `ecosystem`, `chainId`, and token.
 
-TypeScript SDK for [HFI.Network](https://hfi.network) — send crypto to an email address, X handle, or phone number. The SDK routes requests by `vm` / `ecosystem` (`"evm"`, `"tron"`, or `"solana"`) and forwards `chainId` to the quote service where applicable. The client library does not hard-code a single EVM network; actual production support is controlled by the HFI Portal deployment and its enabled chains/tokens.
+TypeScript SDK for [HFI.Network](https://hfi.network) — build identifier-routed crypto payment integrations. The current public rollout enables email and X handle flows; phone remains a typed integration target and must not be presented as live unless the active Portal configuration explicitly enables it. The SDK routes requests by `vm` / `ecosystem` (`"evm"`, `"tron"`, or `"solana"`) and forwards `chainId` to the quote service where applicable. The client library does not hard-code a single EVM network; actual production support is controlled by the HFI Portal deployment and its enabled chains/tokens.
 
 ## Network Scope
 
@@ -41,6 +41,9 @@ import { sendTransaction, waitForTransactionReceipt } from "wagmi/actions";
 
 const client = createHfiPayClient({
   quoteUrl: "https://hfi.network/api/intent/quote",
+  trustedAttestedContracts: {
+    "evm:8453": ["0xREVIEWED_BASE_ATTESTED_CONTRACT"],
+  },
 });
 
 // 1. Get a quote (latest portal quote includes attested order fields)
@@ -98,6 +101,9 @@ import { createHfiPayClient, toBaseUnits } from "hfi-sdk";
 const client = createHfiPayClient({
   quoteUrl: "https://hfi.network/api/intent/quote",
   portalBaseUrl: "https://hfi.network",
+  trustedAttestedContracts: {
+    "tron:728126428": ["REVIEWED_TRON_ATTESTED_CONTRACT"],
+  },
 });
 
 const quote = await client.quoteSend({
@@ -121,13 +127,17 @@ in the package and use the same `vm` / `ecosystem` routing model. Treat Solana
 production availability as a Portal configuration question: do not present
 Solana as live for a deployment unless that Portal has enabled and verified the
 Solana program, mint registry, quote, wallet, indexing, and lifecycle support.
+The following example is for a local development Portal only.
 
 ```typescript
-import { createHfiPayClient, signAndSendSolanaAttestedDeposit } from "hfi-sdk";
+import { createHfiPayClient } from "hfi-sdk";
 import { Connection, clusterApiUrl } from "@solana/web3.js";
 
 const client = createHfiPayClient({
-  quoteUrl: "https://hfi.network/api/intent/quote",
+  quoteUrl: "http://localhost:3100/api/intent/quote",
+  trustedSolanaPrograms: {
+    devnet: ["<REVIEWED_SOLANA_PROGRAM_ID>"],
+  },
 });
 
 const connection = new Connection(clusterApiUrl("devnet"), "confirmed");
@@ -141,19 +151,28 @@ const quote = await client.quoteSend({
 });
 
 // wallet = Solana wallet adapter (e.g. @solana/wallet-adapter-react useWallet())
-const { signature } = await signAndSendSolanaAttestedDeposit(wallet, connection, {
+const tx = await client.prepareSolanaTransaction(connection, {
   quote,
   payer: wallet.publicKey,
+  cluster: "devnet",
 });
+const signature = await wallet.sendTransaction(tx, connection);
 
 console.log("Solana signature:", signature);
 ```
 
-## Safety guarantee
+## Claim, cancel, and refund safety boundary
 
-If the recipient never claims the payment, funds automatically return to the sender after 7 days. There is no way to lose money — worst case is a round-trip.
+For eligible payments, the quote and funding transaction commit the claim,
+cancel, and unclaimed-refund timing together with the authorized destination.
+The application must display and verify those exact values before signing; it
+must not assume that every payment is cancellable or refundable. Network fees,
+unsupported assets, incorrect user inputs, contract defects, and wallet or
+network failures can still cause loss.
 
-The sender also has a **5-minute cancel window** (300 seconds, configurable) after sending. Use `quote.paymentRef` to cancel via the HFI contract's `cancelByPayer(bytes32)` method.
+When the active contract exposes sender cancellation, use `quote.paymentRef`
+and the contract-specific cancel method only within the committed window. Do
+not hard-code a five- or ten-minute window in an integration.
 
 ## Client config
 
@@ -164,13 +183,18 @@ const client = createHfiPayClient({
   retry: { maxAttempts: 3, baseDelayMs: 400 },  // optional retry
   defaultHeaders: { "X-My-App": "v1" },
   fetchImpl: globalThis.fetch, // custom fetch (e.g. node-fetch in Node 16)
+  trustedAttestedContracts: {
+    "evm:8453": ["0xREVIEWED_BASE_ATTESTED_CONTRACT"],
+    "tron:728126428": ["REVIEWED_TRON_ATTESTED_CONTRACT"],
+  },
 });
 ```
 
 ### `prepareEvmTransactions` behavior
 
 - **Attested quote required** (`attestedContract + attestedOrder`): SDK builds `deposit*WithOrder` tx and uses `attestedContract` as spender for ERC-20 approve.
-- **Legacy/basic quote**: `prepareEvmTransactions` rejects it. Use the explicitly deprecated `buildEvmDepositRequest` helper only for old `HfiPayDeposit` deployments.
+- **Pinned deployment required**: the quote contract must appear in `trustedAttestedContracts` for the quote ecosystem and chain.
+- **Legacy/basic quote**: `prepareEvmTransactions` rejects it. The package root does not export a legacy funding builder because it cannot enforce the configured deployment trust root.
 
 ### Amount units (important)
 
@@ -193,15 +217,10 @@ const amountUsdc = toBaseUnits("50", 6);   // USDC
 | `createHfiPayClient(config)` | Create a client instance |
 | `HfiPayClient` | Client class |
 | `fetchPaymentQuote(url, body, opts)` | Low-level quote fetch |
-| `buildEvmAttestedDepositRequest(params)` | Build current attested EVM deposit tx |
-| `buildEvmDepositRequest(params)` | Deprecated legacy/basic EVM deposit tx helper |
-| `buildEvmApproveRequest(params)` | Build ERC-20 approve tx |
 | `isNativeEvmToken(address)` | True for 0x000… / 0xeee… |
 | `toWagmiSendParams(tx)` | Convert tx to wagmi sendTransaction args |
 | `toWagmiSendSequence(approve, deposit)` | Returns `[approve?, deposit]` array |
-| `buildSolanaDepositVersionedTransaction(connection, params)` | Build Solana versioned tx |
-| `signAndSendSolanaAttestedDeposit(wallet, connection, params)` | Sign + send via wallet adapter |
-| `waitForSolanaConfirmation(connection, signature)` | Poll until confirmed |
+| `client.prepareSolanaTransaction(connection, params)` | Validate a pinned Program and build a Solana transaction |
 | `normalizeRecipient(kind, value)` | Normalize email / x / phone |
 | `HfiPayError`, `HfiPayNetworkError`, etc. | Typed error classes |
 | `getNetwork(name)` | Get network config (devnet / testnet / mainnet) |
