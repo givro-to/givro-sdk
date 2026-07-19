@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HFI Enterprise Pay Link Demo</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #0b1220;
+      --card: #121a2b;
+      --text: #e8eefc;
+      --muted: #9aaccb;
+      --accent: #3d8bfd;
+      --accent-2: #22c55e;
+      --danger: #f87171;
+      --border: #243049;
+      --input: #0f172a;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+    }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(900px 400px at 10% -10%, #1d4ed833, transparent),
+        radial-gradient(700px 360px at 100% 0%, #0ea5e933, transparent),
+        var(--bg);
+      color: var(--text);
+    }
+    main {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 40px 20px 80px;
+    }
+    h1 { font-size: 1.6rem; margin: 0 0 8px; }
+    p.lead { color: var(--muted); margin: 0 0 28px; line-height: 1.5; }
+    .card {
+      background: color-mix(in srgb, var(--card) 92%, black);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 20px;
+      box-shadow: 0 20px 50px #00000040;
+    }
+    .row { display: grid; gap: 12px; margin-bottom: 12px; }
+    @media (min-width: 640px) {
+      .row.two { grid-template-columns: 1fr 1fr; }
+    }
+    label { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 6px; }
+    input, select, textarea {
+      width: 100%;
+      box-sizing: border-box;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--input);
+      color: var(--text);
+      padding: 10px 12px;
+      font: inherit;
+    }
+    textarea { min-height: 72px; resize: vertical; }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+    button {
+      border: 0;
+      border-radius: 999px;
+      padding: 12px 20px;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    button.primary {
+      background: linear-gradient(135deg, var(--accent), #6366f1);
+      color: white;
+    }
+    button.primary:disabled { opacity: 0.55; cursor: not-allowed; }
+    button.secondary {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .status {
+      margin-top: 18px;
+      padding: 14px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: #0b1324;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.85rem;
+      line-height: 1.45;
+    }
+    .status.error { border-color: #7f1d1d; color: #fecaca; }
+    .status.ok { border-color: #14532d; color: #bbf7d0; }
+    .badge {
+      display: inline-block;
+      font-size: 0.75rem;
+      padding: 3px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      margin-bottom: 12px;
+    }
+    .badge.ready { color: #86efac; border-color: #166534; }
+    .badge.missing { color: #fca5a5; border-color: #7f1d1d; }
+    a.pay {
+      display: inline-block;
+      margin-top: 12px;
+      color: #93c5fd;
+      font-weight: 700;
+      word-break: break-all;
+    }
+    ol.steps { color: var(--muted); line-height: 1.55; padding-left: 1.2rem; }
+    ol.steps strong { color: var(--text); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Merchant Checkout Demo</h1>
+    <p class="lead">
+      Clicking “Pay” makes this demo create a parameter-locked Pay Link via the Enterprise API.
+      The payer opens the link and pays with their own wallet on HFI (non-custodial, no auto-debit).
+    </p>
+
+    <div id="keyBadge" class="badge">checking API key…</div>
+
+    <section class="card">
+      <form id="payForm">
+        <div class="row two">
+          <div>
+            <label for="amount">Amount</label>
+            <input id="amount" name="amount" required />
+          </div>
+          <div>
+            <label for="fee_payer">Fee paid by</label>
+            <select id="fee_payer" name="fee_payer">
+              <option value="payer">payer (payer covers the fee)</option>
+              <option value="merchant">merchant (merchant covers the fee)</option>
+            </select>
+          </div>
+        </div>
+        <div class="row two">
+          <div>
+            <label for="recipient_identifier">Recipient (merchant receiving identity)</label>
+            <input id="recipient_identifier" name="recipient_identifier" placeholder="merchant@example.com" required />
+          </div>
+          <div>
+            <label for="recipient_kind">Identifier kind</label>
+            <select id="recipient_kind" name="recipient_kind">
+              <option value="email">email</option>
+              <option value="x">x handle</option>
+            </select>
+          </div>
+        </div>
+        <div class="row two">
+          <div>
+            <label for="chain">Chain</label>
+            <select id="chain" name="chain" required disabled>
+              <option value="">Loading…</option>
+            </select>
+          </div>
+          <div>
+            <label for="token">Token</label>
+            <select id="token" name="token" required disabled>
+              <option value="">Loading…</option>
+            </select>
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label for="message">Message (shown to the payer)</label>
+            <textarea id="message" name="message"></textarea>
+          </div>
+        </div>
+        <div class="actions">
+          <button class="primary" id="payBtn" type="submit">Pay / Create Pay Link</button>
+          <button class="secondary" id="openBtn" type="button" disabled>Open Pay Link</button>
+        </div>
+      </form>
+      <div id="status" class="status" hidden></div>
+      <a id="payLink" class="pay" href="#" target="_blank" rel="noopener" hidden></a>
+    </section>
+
+    <section style="margin-top: 28px">
+      <h2 style="font-size: 1.05rem; margin-bottom: 8px">End-to-end steps</h2>
+      <ol class="steps">
+        <li>Register / sign in to Enterprise at <strong>https://hfi.network/enterprise</strong> and create a <strong>test</strong> API key.</li>
+        <li>Put the key in <code>HFI_API_KEY</code> in this directory’s <code>.env</code>, then <code>npm start</code>.</li>
+        <li>Adjust the amount / recipient email on this page and click “Pay” → a <code>pay_url</code> is created.</li>
+        <li>Open the link to HFI <code>/send</code>, approve with your wallet, and complete funding.</li>
+      </ol>
+    </section>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const form = $("payForm");
+    const statusEl = $("status");
+    const payLink = $("payLink");
+    const openBtn = $("openBtn");
+    const payBtn = $("payBtn");
+    const keyBadge = $("keyBadge");
+    const chainSelect = $("chain");
+    const tokenSelect = $("token");
+    let lastPayUrl = "";
+    // Chain/token lists come from HFI's public supported-assets registry
+    // (proxied by this demo's server); the selects are linked.
+    let supportedChains = [];
+
+    function showStatus(text, kind) {
+      statusEl.hidden = false;
+      statusEl.className = "status" + (kind ? " " + kind : "");
+      statusEl.textContent = text;
+    }
+
+    function tokenAddressOf(token) {
+      return token.address || token.contract || "";
+    }
+
+    function shortAddr(addr) {
+      return addr.length > 14 ? addr.slice(0, 8) + "…" + addr.slice(-6) : addr;
+    }
+
+    function selectedChain() {
+      return supportedChains[Number(chainSelect.value)] || null;
+    }
+
+    function selectedToken() {
+      const chain = selectedChain();
+      return chain ? chain.tokens[Number(tokenSelect.value)] || null : null;
+    }
+
+    function populateTokens(preferred) {
+      const chain = selectedChain();
+      tokenSelect.innerHTML = "";
+      if (!chain || chain.tokens.length === 0) {
+        tokenSelect.append(new Option("(no tokens available on this chain)", ""));
+        tokenSelect.disabled = true;
+        return;
+      }
+      chain.tokens.forEach((token, index) => {
+        const addr = tokenAddressOf(token);
+        const label = token.native
+          ? `${token.symbol} (native)`
+          : addr && addr !== "native"
+            ? `${token.symbol} — ${shortAddr(addr)}`
+            : token.symbol;
+        tokenSelect.append(new Option(label, String(index)));
+      });
+      tokenSelect.disabled = false;
+      if (preferred) {
+        const wanted = String(preferred).toLowerCase();
+        const idx = chain.tokens.findIndex((token) =>
+          token.symbol.toLowerCase() === wanted || tokenAddressOf(token).toLowerCase() === wanted);
+        if (idx >= 0) tokenSelect.value = String(idx);
+      }
+    }
+
+    function populateChains(defaults) {
+      chainSelect.innerHTML = "";
+      supportedChains.forEach((chain, index) => {
+        chainSelect.append(new Option(`${chain.label} (${chain.ecosystem} · ${chain.chainId})`, String(index)));
+      });
+      chainSelect.disabled = false;
+      const wantedIdx = supportedChains.findIndex((chain) =>
+        chain.ecosystem === (defaults.ecosystem || "evm") && chain.chainId === Number(defaults.chain_id));
+      chainSelect.value = String(wantedIdx >= 0 ? wantedIdx : 0);
+      populateTokens(defaults.token_address || defaults.token_symbol);
+    }
+
+    async function loadAssets(defaults) {
+      const res = await fetch("/api/supported-assets");
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data || !data.ok || !Array.isArray(data.chains) || data.chains.length === 0) {
+        throw new Error((data && data.error) || "failed to load supported assets");
+      }
+      supportedChains = data.chains;
+      populateChains(defaults);
+    }
+
+    chainSelect.addEventListener("change", () => populateTokens());
+
+    async function loadConfig() {
+      const res = await fetch("/api/config");
+      const data = await res.json();
+      if (!data.ok) throw new Error("failed to load config");
+      const d = data.defaults || {};
+      $("amount").value = d.amount || "1.00";
+      $("recipient_identifier").value = d.recipient_identifier || "";
+      $("recipient_kind").value = d.recipient_kind || "email";
+      $("fee_payer").value = d.fee_payer || "payer";
+      $("message").value = d.message || "";
+      keyBadge.textContent = data.has_api_key
+        ? `API key ready · env=${data.environment} · ${data.api_base}`
+        : "HFI_API_KEY missing — edit .env then restart npm start";
+      keyBadge.className = "badge " + (data.has_api_key ? "ready" : "missing");
+      await loadAssets(d);
+    }
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      payBtn.disabled = true;
+      openBtn.disabled = true;
+      payLink.hidden = true;
+      showStatus("Creating pay link via Enterprise API…");
+      try {
+        const chain = selectedChain();
+        const token = selectedToken();
+        if (!chain || !token) throw new Error("Select a chain and token (retry if the lists failed to load)");
+        const payload = {
+          amount: $("amount").value.trim(),
+          recipient_identifier: $("recipient_identifier").value.trim(),
+          recipient_kind: $("recipient_kind").value,
+          chain_id: chain.chainId,
+          ecosystem: chain.ecosystem,
+          // The payment-links API keys tokens by their registry identifier:
+          // ERC-20/TRC-20 addresses, the zero address for native ETH, and the
+          // "native" marker for TRX. Symbol-only entries (older portals'
+          // supported_assets) fall back to token_symbol resolution.
+          ...(function () {
+            const addr = tokenAddressOf(token);
+            return addr ? { token_address: addr } : { token_symbol: token.symbol };
+          })(),
+          fee_payer: $("fee_payer").value,
+          message: $("message").value.trim(),
+          merchant_ref: "demo_" + Date.now(),
+        };
+        const res = await fetch("/api/create-pay-link", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          throw new Error(data.error || ("HTTP " + res.status));
+        }
+        lastPayUrl = data.pay_url || "";
+        if (!lastPayUrl) throw new Error("API returned no pay_url");
+        showStatus(
+          "Pay link created.\n\n" +
+          "payment_link_id: " + (data.payment_link_id || data.payment_link?.payment_request_id || "(n/a)") + "\n" +
+          "merchant_ref: " + (data.payment_link?.merchant_ref || payload.merchant_ref) + "\n" +
+          "pay_url:\n" + lastPayUrl,
+          "ok",
+        );
+        payLink.href = lastPayUrl;
+        payLink.textContent = lastPayUrl;
+        payLink.hidden = false;
+        openBtn.disabled = false;
+      } catch (err) {
+        showStatus(String(err && err.message ? err.message : err), "error");
+      } finally {
+        payBtn.disabled = false;
+      }
+    });
+
+    openBtn.addEventListener("click", () => {
+      if (lastPayUrl) window.open(lastPayUrl, "_blank", "noopener,noreferrer");
+    });
+
+    loadConfig().catch((err) => {
+      keyBadge.textContent = "config load failed";
+      keyBadge.className = "badge missing";
+      showStatus(String(err), "error");
+    });
+  </script>
+</body>
+</html>
