@@ -25,7 +25,7 @@
 ## 安装
 
 ```bash
-npm install hfi-sdk viem @solana/web3.js @solana/spl-token
+npm install givro-sdk viem @solana/web3.js @solana/spl-token
 # 仅使用本文 wagmi 示例时需要：
 npm install wagmi @tanstack/react-query
 ```

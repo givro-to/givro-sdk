@@ -83,7 +83,7 @@ Solidity ABI zero address，调用 TronWeb 前可按所用版本转换为 `41…
 `attestedContract`（EVM/Tron）。SDK 提供类型化 helper：
 
 ```typescript
-import { fetchPublicSupportedAssets } from 'hfi-sdk';
+import { fetchPublicSupportedAssets } from 'givro-sdk';
 
 const runtime = await fetchPublicSupportedAssets('https://hfi.network');
 ```
@@ -158,7 +158,7 @@ amount、全部账户及 signer/writable 权限、指令 discriminator/参数，
 ### fetchPaymentQuote
 
 ```typescript
-import { fetchPaymentQuote } from 'hfi-sdk';
+import { fetchPaymentQuote } from 'givro-sdk';
 
 function fetchPaymentQuote(
   quoteUrl: string,
@@ -185,7 +185,7 @@ function fetchPaymentQuote(
 ### HfiPayClient
 
 ```typescript
-import { createHfiPayClient } from 'hfi-sdk';
+import { createHfiPayClient } from 'givro-sdk';
 
 const client = createHfiPayClient({
   quoteUrl: string;
@@ -224,7 +224,7 @@ Solana 面向已完成独立参数审核的钱包集成提供
 ### waitForSolanaConfirmation
 
 ```typescript
-import { waitForSolanaConfirmation } from 'hfi-sdk';
+import { waitForSolanaConfirmation } from 'givro-sdk';
 
 async function waitForSolanaConfirmation(
   connection: Connection,
@@ -246,7 +246,7 @@ import {
   buildEvmBindTx,            // 绑定钱包地址到 idHash
   buildEvmRevokePendingTx,   // 撤销待激活的绑定变更
   buildEvmClaimTx,           // 接收方手动 claim
-} from 'hfi-sdk';
+} from 'givro-sdk';
 ```
 
 ---
@@ -254,7 +254,7 @@ import {
 ### normalizeRecipient / normalizeEmail
 
 ```typescript
-import { normalizeRecipient, normalizeEmail } from 'hfi-sdk';
+import { normalizeRecipient, normalizeEmail } from 'givro-sdk';
 
 normalizeRecipient('email', 'Alice+tag@Gmail.COM')   // 'alice@gmail.com'
 normalizeRecipient('x', '@Alice')                     // 'alice'
@@ -270,7 +270,7 @@ normalizeEmail('Alice+tag@Example.COM')               // 'alice+tag@example.com'
 ### toBaseUnits
 
 ```typescript
-import { toBaseUnits } from 'hfi-sdk';
+import { toBaseUnits } from 'givro-sdk';
 
 toBaseUnits('1.5', 6)    // '1500000'    USDC
 toBaseUnits('0.01', 9)   // '10000000'   SOL

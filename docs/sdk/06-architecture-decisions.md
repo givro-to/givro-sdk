@@ -108,7 +108,7 @@ if (isEmail(input) || isXHandle(input)) {
 
 ### 背景
 
-第三方钱包（MetaMask、Coinbase Wallet 等）接入 hfi-sdk 后，每笔由其用户发起的支付都应归因到该集成方，以便 HFI 按约定比例结算收益分成。
+第三方钱包（MetaMask、Coinbase Wallet 等）接入 givro-sdk 后，每笔由其用户发起的支付都应归因到该集成方，以便 HFI 按约定比例结算收益分成。
 
 ### 约束
 

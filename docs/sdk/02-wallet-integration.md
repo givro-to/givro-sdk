@@ -13,7 +13,7 @@ SDK 使用 `vm` / `ecosystem` 字段选择结算虚拟机：`evm`、`solana` 或
 ## 安装
 
 ```bash
-npm install hfi-sdk viem @solana/web3.js @solana/spl-token
+npm install givro-sdk viem @solana/web3.js @solana/spl-token
 # 仅使用 wagmi 示例时需要
 npm install wagmi @tanstack/react-query
 ```
@@ -24,7 +24,7 @@ npm install wagmi @tanstack/react-query
 ## 运行时资产发现与独立 pin
 
 ```typescript
-import { fetchPublicSupportedAssets } from 'hfi-sdk';
+import { fetchPublicSupportedAssets } from 'givro-sdk';
 
 const runtime = await fetchPublicSupportedAssets('https://hfi.network');
 ```
@@ -45,7 +45,7 @@ discovery response 推断为完整闭环；未完成 Program、marker、指令�
 ### 完整发送流程（推荐，使用 HfiPayClient）
 
 ```typescript
-import { createHfiPayClient } from 'hfi-sdk';
+import { createHfiPayClient } from 'givro-sdk';
 import { Connection, PublicKey } from '@solana/web3.js';
 import { REVIEWED_HFI_PROGRAMS } from './hfi-reviewed-deployments.js';
 
@@ -113,7 +113,7 @@ Portal 同时成为 quote 与待签交易内容的唯一信任来源。
 ### 使用 HfiPayClient（推荐）
 
 ```typescript
-import { createHfiPayClient } from 'hfi-sdk';
+import { createHfiPayClient } from 'givro-sdk';
 import { REVIEWED_HFI_CONTRACTS } from './hfi-reviewed-deployments.js';
 
 const client = createHfiPayClient({
@@ -162,7 +162,7 @@ import {
   HFI_PAY_ATTESTED_ABI_TRON,
   TRON_ATTESTED_ZERO_RELAY,
   toBaseUnits,
-} from 'hfi-sdk';
+} from 'givro-sdk';
 import { REVIEWED_HFI_CONTRACTS } from './hfi-reviewed-deployments.js';
 
 const chainId = 728126428;
@@ -264,7 +264,7 @@ Program。
 SDK 提供 `normalizeRecipient` 辅助函数：
 
 ```typescript
-import { normalizeRecipient } from 'hfi-sdk';
+import { normalizeRecipient } from 'givro-sdk';
 
 // 'First.Last+tag@googlemail.com' → 'firstlast@gmail.com'
 // 'alice+tag@example.com' → 'alice+tag@example.com'（非 Gmail 保留 +tag 和点）
@@ -275,7 +275,7 @@ const normalized = normalizeRecipient('email', userInput);
 ## 金额单位转换
 
 ```typescript
-import { toBaseUnits } from 'hfi-sdk';
+import { toBaseUnits } from 'givro-sdk';
 
 // 人类可读金额 → 最小单位字符串
 const amountWei = toBaseUnits('1.5', 6);   // USDC: '1500000'

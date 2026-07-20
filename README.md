@@ -1,4 +1,4 @@
-# hfi-sdk
+# givro-sdk
 
 **License:** MIT  
 **Package:** TypeScript / ESM SDK  
@@ -31,7 +31,7 @@ step to discover the Portal's active chains, assets, and advertised settlement
 contracts:
 
 ```typescript
-import { fetchPublicSupportedAssets } from "hfi-sdk";
+import { fetchPublicSupportedAssets } from "givro-sdk";
 
 const runtime = await fetchPublicSupportedAssets("https://hfi.network");
 console.table(runtime.chains);
@@ -52,7 +52,7 @@ Wrapped SOL is an SPL token mint, not a substitute for the native-SOL marker.
 ## Install
 
 ```bash
-npm install hfi-sdk viem @solana/web3.js @solana/spl-token
+npm install givro-sdk viem @solana/web3.js @solana/spl-token
 # Required only when following the wagmi example below:
 npm install wagmi @tanstack/react-query
 ```
@@ -71,7 +71,7 @@ chain-specific registries; settlement pins must be canonical non-zero `0x`
 addresses.
 
 ```typescript
-import { createHfiPayClient } from "hfi-sdk";
+import { createHfiPayClient } from "givro-sdk";
 import { sendTransaction, waitForTransactionReceipt } from "wagmi/actions";
 import { REVIEWED_HFI_CONTRACTS } from "./hfi-reviewed-deployments.js";
 
@@ -103,7 +103,7 @@ const { approve, deposit } = client.prepareEvmTransactions({
 });
 
 // 3. Send (wagmi helpers)
-import { toWagmiSendParams } from "hfi-sdk";
+import { toWagmiSendParams } from "givro-sdk";
 
 if (approve) {
   const approveTx = await sendTransaction(wagmiConfig, toWagmiSendParams(approve));
@@ -156,7 +156,7 @@ import {
   HFI_PAY_ATTESTED_ABI_TRON,
   TRON_ATTESTED_ZERO_RELAY,
   toBaseUnits,
-} from "hfi-sdk";
+} from "givro-sdk";
 import { REVIEWED_HFI_CONTRACTS } from "./hfi-reviewed-deployments.js";
 
 const client = createHfiPayClient({
@@ -264,7 +264,7 @@ Solana program, mint registry, quote, wallet, indexing, and lifecycle support.
 The following example is for a local development Portal only.
 
 ```typescript
-import { createHfiPayClient } from "hfi-sdk";
+import { createHfiPayClient } from "givro-sdk";
 import { Connection, clusterApiUrl } from "@solana/web3.js";
 import { REVIEWED_HFI_PROGRAMS } from "./hfi-reviewed-deployments.js";
 
@@ -349,7 +349,7 @@ const client = createHfiPayClient({
 - USDC: 6 decimals (`1 USDC = 10^6`)
 
 ```typescript
-import { toBaseUnits } from "hfi-sdk";
+import { toBaseUnits } from "givro-sdk";
 
 const amountWei = toBaseUnits("0.01", 18); // ETH
 const amountUsdc = toBaseUnits("50", 6);   // USDC
@@ -376,7 +376,7 @@ const amountUsdc = toBaseUnits("50", 6);   // USDC
 ## Error handling
 
 ```typescript
-import { HfiPayError, HfiPayNetworkError, HfiPayQuoteError } from "hfi-sdk";
+import { HfiPayError, HfiPayNetworkError, HfiPayQuoteError } from "givro-sdk";
 
 try {
   const quote = await client.quoteSend({ ... });

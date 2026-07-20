@@ -1,9 +1,9 @@
 {
-  "name": "hfi-enterprise-pay-link-demo",
+  "name": "givro-enterprise-pay-link-demo",
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Minimal merchant demo: click Pay → create HFI Enterprise pay link → open link and pay with wallet",
+  "description": "Minimal merchant demo: click Pay → create Givro Enterprise pay link → open link and pay with wallet",
   "scripts": {
     "start": "node server.mjs",
     "dev": "node server.mjs"

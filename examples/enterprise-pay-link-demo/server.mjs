@@ -1,9 +1,9 @@
 /**
- * Minimal merchant site demo for HFI Enterprise pay links.
+ * Minimal merchant site demo for Givro Enterprise pay links.
  *
  * Flow:
  *  1. Browser clicks "Pay" → POST /api/create-pay-link (this server)
- *  2. This server calls HFI: POST /api/payment-links
+ *  2. This server calls Givro: POST /api/payment-links
  *  3. Response includes pay_url → UI shows link; payer opens it and pays with wallet
  *
  * Env: copy .env.example → .env (or export vars in the shell).
@@ -42,22 +42,22 @@ function loadDotEnv() {
 loadDotEnv();
 
 const PORT = Number(process.env.PORT || 3847);
-const API_BASE = (process.env.HFI_API_BASE || "https://hfi.network").replace(/\/+$/, "");
-const API_KEY = (process.env.HFI_API_KEY || "").trim();
-const ENVIRONMENT = (process.env.HFI_ENVIRONMENT || "test").trim() === "live" ? "live" : "test";
+const API_BASE = (process.env.GIVRO_API_BASE || "https://givro.to").replace(/\/+$/, "");
+const API_KEY = (process.env.GIVRO_API_KEY || "").trim();
+const ENVIRONMENT = (process.env.GIVRO_ENVIRONMENT || "test").trim() === "live" ? "live" : "test";
 
 function defaultsFromEnv() {
   return {
     environment: ENVIRONMENT,
-    recipient_kind: (process.env.HFI_RECIPIENT_KIND || "email").trim(),
-    recipient_identifier: (process.env.HFI_RECIPIENT_IDENTIFIER || "").trim(),
-    amount: (process.env.HFI_AMOUNT || "1.00").trim(),
-    ecosystem: (process.env.HFI_ECOSYSTEM || "evm").trim(),
-    chain_id: Number(process.env.HFI_CHAIN_ID || (ENVIRONMENT === "live" ? 8453 : 84532)),
-    token_address: (process.env.HFI_TOKEN_ADDRESS || "").trim(),
-    token_symbol: (process.env.HFI_TOKEN_SYMBOL || (process.env.HFI_TOKEN_ADDRESS ? "" : "ETH")).trim(),
-    fee_payer: (process.env.HFI_FEE_PAYER || "payer").trim(),
-    message: (process.env.HFI_MESSAGE || "Demo payment").trim(),
+    recipient_kind: (process.env.GIVRO_RECIPIENT_KIND || "email").trim(),
+    recipient_identifier: (process.env.GIVRO_RECIPIENT_IDENTIFIER || "").trim(),
+    amount: (process.env.GIVRO_AMOUNT || "1.00").trim(),
+    ecosystem: (process.env.GIVRO_ECOSYSTEM || "evm").trim(),
+    chain_id: Number(process.env.GIVRO_CHAIN_ID || (ENVIRONMENT === "live" ? 8453 : 84532)),
+    token_address: (process.env.GIVRO_TOKEN_ADDRESS || "").trim(),
+    token_symbol: (process.env.GIVRO_TOKEN_SYMBOL || (process.env.GIVRO_TOKEN_ADDRESS ? "" : "ETH")).trim(),
+    fee_payer: (process.env.GIVRO_FEE_PAYER || "payer").trim(),
+    message: (process.env.GIVRO_MESSAGE || "Demo payment").trim(),
   };
 }
 
@@ -180,7 +180,7 @@ async function fetchSupportedAssets() {
 
 async function createEnterprisePayLink(input) {
   if (!API_KEY) {
-    const err = new Error("HFI_API_KEY is not set. Copy .env.example to .env and paste your Enterprise API key.");
+    const err = new Error("GIVRO_API_KEY is not set. Copy .env.example to .env and paste your Enterprise API key.");
     err.status = 500;
     err.code = "missing_api_key";
     throw err;
@@ -200,7 +200,7 @@ async function createEnterprisePayLink(input) {
     amount: String(input.amount || defaults.amount).trim(),
     ecosystem: input.ecosystem || defaults.ecosystem,
     chain_id: Number(input.chain_id ?? defaults.chain_id),
-    // Address wins when both are present; token_symbol is resolved server-side by HFI.
+    // Address wins when both are present; token_symbol is resolved server-side by Givro.
     ...(tokenAddress ? { token_address: tokenAddress } : { token_symbol: tokenSymbol }),
     fee_payer: input.fee_payer || defaults.fee_payer,
     merchant_ref: String(input.merchant_ref || `demo_${Date.now()}`).slice(0, 128),
@@ -230,7 +230,7 @@ async function createEnterprisePayLink(input) {
   if (!res.ok) {
     const message = typeof json.error === "object"
       ? (json.error.message || JSON.stringify(json.error))
-      : (json.error || json.message || `HFI API failed with HTTP ${res.status}`);
+      : (json.error || json.message || `Givro API failed with HTTP ${res.status}`);
     const err = new Error(message);
     err.status = res.status;
     err.details = json;
@@ -304,10 +304,10 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log("");
-  console.log("HFI Enterprise pay-link demo");
+  console.log("Givro Enterprise pay-link demo");
   console.log(`  open  http://127.0.0.1:${PORT}`);
   console.log(`  api   ${API_BASE}`);
   console.log(`  env   ${ENVIRONMENT}`);
-  console.log(`  key   ${API_KEY ? "set" : "MISSING — set HFI_API_KEY in .env"}`);
+  console.log(`  key   ${API_KEY ? "set" : "MISSING — set GIVRO_API_KEY in .env"}`);
   console.log("");
 });

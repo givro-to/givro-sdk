@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>HFI Enterprise Pay Link Demo</title>
+  <title>Givro Enterprise Pay Link Demo</title>
   <style>
     :root {
       color-scheme: light dark;
@@ -117,7 +117,7 @@
     <h1>Merchant Checkout Demo</h1>
     <p class="lead">
       Clicking “Pay” makes this demo create a parameter-locked Pay Link via the Enterprise API.
-      The payer opens the link and pays with their own wallet on HFI (non-custodial, no auto-debit).
+      The payer opens the link and pays with their own wallet on Givro (non-custodial, no auto-debit).
     </p>
 
     <div id="keyBadge" class="badge">checking API key…</div>
@@ -182,10 +182,10 @@
     <section style="margin-top: 28px">
       <h2 style="font-size: 1.05rem; margin-bottom: 8px">End-to-end steps</h2>
       <ol class="steps">
-        <li>Register / sign in to Enterprise at <strong>https://hfi.network/enterprise</strong> and create a <strong>test</strong> API key.</li>
-        <li>Put the key in <code>HFI_API_KEY</code> in this directory’s <code>.env</code>, then <code>npm start</code>.</li>
+        <li>Register / sign in to Enterprise at <strong>https://givro.to/enterprise</strong> and create a <strong>test</strong> API key.</li>
+        <li>Put the key in <code>GIVRO_API_KEY</code> in this directory’s <code>.env</code>, then <code>npm start</code>.</li>
         <li>Adjust the amount / recipient email on this page and click “Pay” → a <code>pay_url</code> is created.</li>
-        <li>Open the link to HFI <code>/send</code>, approve with your wallet, and complete funding.</li>
+        <li>Open the link to Givro <code>/send</code>, approve with your wallet, and complete funding.</li>
       </ol>
     </section>
   </main>
@@ -201,7 +201,7 @@
     const chainSelect = $("chain");
     const tokenSelect = $("token");
     let lastPayUrl = "";
-    // Chain/token lists come from HFI's public supported-assets registry
+    // Chain/token lists come from Givro's public supported-assets registry
     // (proxied by this demo's server); the selects are linked.
     let supportedChains = [];
 
@@ -290,7 +290,7 @@
       $("message").value = d.message || "";
       keyBadge.textContent = data.has_api_key
         ? `API key ready · env=${data.environment} · ${data.api_base}`
-        : "HFI_API_KEY missing — edit .env then restart npm start";
+        : "GIVRO_API_KEY missing — edit .env then restart npm start";
       keyBadge.className = "badge " + (data.has_api_key ? "ready" : "missing");
       await loadAssets(d);
     }
