@@ -1,6 +1,11 @@
 import { concatBytes, pad, sha256, toBytes, type Address, type Hex } from "viem";
 
-/** Must match `hfi_pay_core` / EVM `HfiPayClaimDigest` / Solana program. */
+/**
+ * Protocol domain-separation constant. Must match `hfi_pay_core` / EVM
+ * `HfiPayClaimDigest.sol` / Solana program byte-for-byte. The value predates
+ * the Givro rebrand and is hashed into on-chain claim digests — never rename
+ * or rebrand it.
+ */
 export const HFI_PAY_DEPLOYMENT_DOMAIN = "hfi-pay:v1" as const;
 
 const CHAIN_TAG_EVM = 0x01;

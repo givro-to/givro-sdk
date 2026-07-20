@@ -1,8 +1,8 @@
 import {
-  HfiPayConfigError,
-  HfiPayError,
-  HfiPayNetworkError,
-  HfiPayTimeoutError,
+  GivroPayConfigError,
+  GivroPayError,
+  GivroPayNetworkError,
+  GivroPayTimeoutError,
 } from "./errors.js";
 
 export type PublicNetworkProfile = "mainnet" | "testnet";
@@ -72,28 +72,28 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function assertCommonAsset(value: unknown, addressField: "address" | "mint" | "contract"): void {
-  if (!isRecord(value)) throw new HfiPayConfigError("asset entry must be an object");
+  if (!isRecord(value)) throw new GivroPayConfigError("asset entry must be an object");
   if (typeof value.symbol !== "string" || value.symbol.length === 0) {
-    throw new HfiPayConfigError("asset symbol must be a non-empty string");
+    throw new GivroPayConfigError("asset symbol must be a non-empty string");
   }
   const address = value[addressField];
   if (typeof address !== "string" || address.length === 0) {
-    throw new HfiPayConfigError(`asset ${addressField} must be a non-empty string`);
+    throw new GivroPayConfigError(`asset ${addressField} must be a non-empty string`);
   }
   if (typeof value.decimals !== "number" || !Number.isInteger(value.decimals) || value.decimals < 0) {
-    throw new HfiPayConfigError("asset decimals must be a non-negative integer");
+    throw new GivroPayConfigError("asset decimals must be a non-negative integer");
   }
   if (value.native !== undefined && typeof value.native !== "boolean") {
-    throw new HfiPayConfigError("asset native flag must be boolean when present");
+    throw new GivroPayConfigError("asset native flag must be boolean when present");
   }
 }
 
 function assertSupportedChain(value: unknown): void {
-  if (!isRecord(value)) throw new HfiPayConfigError("chain entry must be an object");
+  if (!isRecord(value)) throw new GivroPayConfigError("chain entry must be an object");
   if (typeof value.network !== "string" || typeof value.label !== "string") {
-    throw new HfiPayConfigError("chain network and label must be strings");
+    throw new GivroPayConfigError("chain network and label must be strings");
   }
-  if (!Array.isArray(value.tokens)) throw new HfiPayConfigError("chain tokens must be an array");
+  if (!Array.isArray(value.tokens)) throw new GivroPayConfigError("chain tokens must be an array");
   const assertAttestedContract = () => {
     if (value.attestedContract === undefined) return;
     if (
@@ -101,13 +101,13 @@ function assertSupportedChain(value: unknown): void {
       || !/^0x[0-9a-fA-F]{40}$/.test(value.attestedContract)
       || /^0x0{40}$/.test(value.attestedContract)
     ) {
-      throw new HfiPayConfigError("attestedContract must be a non-zero canonical 0x address");
+      throw new GivroPayConfigError("attestedContract must be a non-zero canonical 0x address");
     }
   };
 
   if (value.ecosystem === "evm") {
     if (typeof value.chainId !== "number" || !Number.isSafeInteger(value.chainId) || value.chainId <= 0) {
-      throw new HfiPayConfigError("EVM chainId must be a positive integer");
+      throw new GivroPayConfigError("EVM chainId must be a positive integer");
     }
     assertAttestedContract();
     value.tokens.forEach((asset) => assertCommonAsset(asset, "address"));
@@ -115,7 +115,7 @@ function assertSupportedChain(value: unknown): void {
   }
   if (value.ecosystem === "tron") {
     if (typeof value.chainId !== "number" || !Number.isSafeInteger(value.chainId) || value.chainId <= 0) {
-      throw new HfiPayConfigError("Tron chainId must be a positive integer");
+      throw new GivroPayConfigError("Tron chainId must be a positive integer");
     }
     assertAttestedContract();
     value.tokens.forEach((asset) => assertCommonAsset(asset, "contract"));
@@ -123,23 +123,23 @@ function assertSupportedChain(value: unknown): void {
   }
   if (value.ecosystem === "solana") {
     if (typeof value.cluster !== "string" || value.cluster.length === 0) {
-      throw new HfiPayConfigError("Solana cluster must be a non-empty string");
+      throw new GivroPayConfigError("Solana cluster must be a non-empty string");
     }
     value.tokens.forEach((asset) => assertCommonAsset(asset, "mint"));
     return;
   }
-  throw new HfiPayConfigError("chain ecosystem must be evm, tron, or solana");
+  throw new GivroPayConfigError("chain ecosystem must be evm, tron, or solana");
 }
 
 function coercePublicSupportedAssets(value: unknown): PublicSupportedAssetsConfig {
-  if (!isRecord(value)) throw new HfiPayConfigError("response must be an object");
+  if (!isRecord(value)) throw new GivroPayConfigError("response must be an object");
   if (value.profile !== "mainnet" && value.profile !== "testnet") {
-    throw new HfiPayConfigError("profile must be mainnet or testnet");
+    throw new GivroPayConfigError("profile must be mainnet or testnet");
   }
   if (typeof value.version !== "number" || !Number.isSafeInteger(value.version) || value.version < 0) {
-    throw new HfiPayConfigError("version must be a non-negative integer");
+    throw new GivroPayConfigError("version must be a non-negative integer");
   }
-  if (!Array.isArray(value.chains)) throw new HfiPayConfigError("chains must be an array");
+  if (!Array.isArray(value.chains)) throw new GivroPayConfigError("chains must be an array");
   value.chains.forEach(assertSupportedChain);
   return value as unknown as PublicSupportedAssetsConfig;
 }
@@ -159,7 +159,7 @@ export async function fetchPublicSupportedAssets(
 ): Promise<PublicSupportedAssetsConfig> {
   const fetchFn = options.fetchImpl ?? globalThis.fetch;
   if (!fetchFn) {
-    throw new HfiPayError("NETWORK_ERROR", "fetch is not available; pass fetchImpl");
+    throw new GivroPayError("NETWORK_ERROR", "fetch is not available; pass fetchImpl");
   }
   const url = `${portalBaseUrl.replace(/\/$/, "")}/api/public/supported-assets`;
   const timeoutMs = options.timeoutMs ?? 10_000;
@@ -175,23 +175,23 @@ export async function fetchPublicSupportedAssets(
     });
   } catch (err) {
     if ((err as { name?: string }).name === "AbortError") {
-      throw new HfiPayTimeoutError(timeoutMs, { cause: err, code: "CONFIG_TIMEOUT" });
+      throw new GivroPayTimeoutError(timeoutMs, { cause: err, code: "CONFIG_TIMEOUT" });
     }
-    throw new HfiPayError("NETWORK_ERROR", "HFI Pay public configuration request failed", { cause: err });
+    throw new GivroPayError("NETWORK_ERROR", "Givro public configuration request failed", { cause: err });
   } finally {
     clearTimeout(timer);
   }
 
   if (!response.ok) {
     const responseBody = await response.text().catch(() => "");
-    throw new HfiPayNetworkError(response.status, responseBody, { code: "NETWORK_ERROR" });
+    throw new GivroPayNetworkError(response.status, responseBody, { code: "NETWORK_ERROR" });
   }
 
   let json: unknown;
   try {
     json = await response.json();
   } catch (err) {
-    throw new HfiPayConfigError("response is not valid JSON", { cause: err });
+    throw new GivroPayConfigError("response is not valid JSON", { cause: err });
   }
   return coercePublicSupportedAssets(json);
 }

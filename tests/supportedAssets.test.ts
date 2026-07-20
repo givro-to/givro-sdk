@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  HfiPayConfigError,
-  HfiPayTimeoutError,
-  HfiPayNetworkError,
+  GivroPayConfigError,
+  GivroPayTimeoutError,
+  GivroPayNetworkError,
   fetchPublicSupportedAssets,
 } from "../src/index.js";
 
@@ -49,10 +49,10 @@ const CONFIG = {
 describe("fetchPublicSupportedAssets", () => {
   it("returns a typed runtime registry including reviewed contract discovery fields", async () => {
     const fetchImpl = vi.fn().mockResolvedValue(response(200, CONFIG));
-    const result = await fetchPublicSupportedAssets("https://hfi.network/", { fetchImpl });
+    const result = await fetchPublicSupportedAssets("https://givro.to/", { fetchImpl });
 
     expect(fetchImpl).toHaveBeenCalledWith(
-      "https://hfi.network/api/public/supported-assets",
+      "https://givro.to/api/public/supported-assets",
       expect.objectContaining({ method: "GET" }),
     );
     expect(result.chains[0]).toMatchObject({
@@ -67,8 +67,8 @@ describe("fetchPublicSupportedAssets", () => {
       ...CONFIG,
       chains: [{ ...CONFIG.chains[0], tokens: [{ symbol: "ETH", decimals: 18 }] }],
     }));
-    await expect(fetchPublicSupportedAssets("https://hfi.network", { fetchImpl }))
-      .rejects.toBeInstanceOf(HfiPayConfigError);
+    await expect(fetchPublicSupportedAssets("https://givro.to", { fetchImpl }))
+      .rejects.toBeInstanceOf(GivroPayConfigError);
   });
 
   it.each([
@@ -80,8 +80,8 @@ describe("fetchPublicSupportedAssets", () => {
       ...CONFIG,
       chains: [{ ...CONFIG.chains[0], attestedContract }],
     }));
-    await expect(fetchPublicSupportedAssets("https://hfi.network", { fetchImpl }))
-      .rejects.toBeInstanceOf(HfiPayConfigError);
+    await expect(fetchPublicSupportedAssets("https://givro.to", { fetchImpl }))
+      .rejects.toBeInstanceOf(GivroPayConfigError);
   });
 
   it.each([
@@ -93,25 +93,25 @@ describe("fetchPublicSupportedAssets", () => {
       ...CONFIG,
       chains: [{ ...CONFIG.chains[1], attestedContract }],
     }));
-    await expect(fetchPublicSupportedAssets("https://hfi.network", { fetchImpl }))
-      .rejects.toBeInstanceOf(HfiPayConfigError);
+    await expect(fetchPublicSupportedAssets("https://givro.to", { fetchImpl }))
+      .rejects.toBeInstanceOf(GivroPayConfigError);
   });
 
   it("returns a typed HTTP error", async () => {
     const fetchImpl = vi.fn().mockResolvedValue(response(503, "unavailable"));
-    await expect(fetchPublicSupportedAssets("https://hfi.network", { fetchImpl }))
-      .rejects.toBeInstanceOf(HfiPayNetworkError);
+    await expect(fetchPublicSupportedAssets("https://givro.to", { fetchImpl }))
+      .rejects.toBeInstanceOf(GivroPayNetworkError);
   });
 
   it("uses a configuration-specific timeout code", async () => {
     const aborted = Object.assign(new Error("aborted"), { name: "AbortError" });
     const fetchImpl = vi.fn().mockRejectedValue(aborted);
     try {
-      await fetchPublicSupportedAssets("https://hfi.network", { fetchImpl });
+      await fetchPublicSupportedAssets("https://givro.to", { fetchImpl });
       throw new Error("expected configuration fetch to fail");
     } catch (err) {
-      expect(err).toBeInstanceOf(HfiPayTimeoutError);
-      expect((err as HfiPayTimeoutError).code).toBe("CONFIG_TIMEOUT");
+      expect(err).toBeInstanceOf(GivroPayTimeoutError);
+      expect((err as GivroPayTimeoutError).code).toBe("CONFIG_TIMEOUT");
     }
   });
 });

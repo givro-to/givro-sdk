@@ -1,5 +1,5 @@
 /** ABI for the deployed `HfiPayDeposit` EVM contract. */
-export const HFI_PAY_DEPOSIT_ABI = [
+export const GIVRO_PAY_DEPOSIT_ABI = [
   {
     type: "function",
     name: "depositErc20",
@@ -24,7 +24,7 @@ export const HFI_PAY_DEPOSIT_ABI = [
 export const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const;
 
 /** ABI for `HfiPayAttested` v2 — permissionless deposit, protocol fee. */
-export const HFI_PAY_ATTESTED_V1_ABI = [
+export const GIVRO_PAY_ATTESTED_V1_ABI = [
   {
     type: "function",
     name: "depositNativeWithOrder",

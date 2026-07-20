@@ -13,7 +13,7 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHmac, timingSafeEqual } from "node:crypto";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, "public");
@@ -274,6 +274,37 @@ const server = http.createServer(async (req, res) => {
         error: error instanceof Error ? error.message : String(error),
       });
     }
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/webhook") {
+    // Givro lifecycle webhook receiver. Verify Givro-Signature
+    // (t=<unix-seconds>,v1=<hex> of HMAC-SHA256(secret, timestamp + "." + rawBody))
+    // before trusting the payload; reconcile idempotently by payload.id.
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    const rawBody = Buffer.concat(chunks).toString("utf8");
+    const secret = (process.env.GIVRO_WEBHOOK_SECRET || "").trim();
+    const header = String(req.headers["givro-signature"] || "");
+    let verified = false;
+    if (secret && header) {
+      const parts = Object.fromEntries(header.split(",").map((p) => p.split("=")));
+      const timestamp = Number(parts.t);
+      const expected = createHmac("sha256", secret).update(`${parts.t}.${rawBody}`).digest("hex");
+      const given = String(parts.v1 || "");
+      verified = Number.isFinite(timestamp)
+        && Math.abs(Math.floor(Date.now() / 1000) - timestamp) <= 300
+        && given.length === expected.length
+        && timingSafeEqual(Buffer.from(given, "hex"), Buffer.from(expected, "hex"));
+    }
+    let payload = {};
+    try { payload = JSON.parse(rawBody); } catch { /* keep raw log below */ }
+    console.log(`[webhook] ${verified ? "VERIFIED" : (secret ? "SIGNATURE MISMATCH" : "UNVERIFIED (set GIVRO_WEBHOOK_SECRET)")} id=${payload.id ?? "?"} type=${payload.type ?? "?"} payment_link_id=${payload.payment_link_id ?? "?"} status=${payload.current_status ?? payload.payment_link?.status ?? "?"}`);
+    if (secret && !verified) {
+      sendJson(res, 400, { ok: false, error: "signature verification failed" });
+      return;
+    }
+    sendJson(res, 200, { ok: true });
     return;
   }
 

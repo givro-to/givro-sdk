@@ -1,7 +1,7 @@
 import type { Address, Hex } from "viem";
 import { encodeFunctionData } from "viem";
-import { HfiPayBuildTxError } from "../errors.js";
-import { HFI_PAY_ATTESTED_V1_ABI, HFI_PAY_DEPOSIT_ABI, ZERO_ADDRESS } from "./abi.js";
+import { GivroPayBuildTxError } from "../errors.js";
+import { GIVRO_PAY_ATTESTED_V1_ABI, GIVRO_PAY_DEPOSIT_ABI, ZERO_ADDRESS } from "./abi.js";
 
 const ERC20_APPROVE_ABI = [
   {
@@ -29,7 +29,7 @@ export interface EvmTxRequest {
 
 function assertCanonicalNonZeroContract(address: string, fieldName: string): void {
   if (!/^0x[0-9a-fA-F]{40}$/.test(address) || /^0x0{40}$/i.test(address)) {
-    throw new HfiPayBuildTxError(`${fieldName} must be a canonical non-zero EVM address`);
+    throw new GivroPayBuildTxError(`${fieldName} must be a canonical non-zero EVM address`);
   }
 }
 
@@ -80,7 +80,7 @@ export function buildEvmAttestedDepositRequest(params: {
     to: params.depositContract,
     value: isNative ? o.amount : 0n,
     data: encodeFunctionData({
-      abi: HFI_PAY_ATTESTED_V1_ABI,
+      abi: GIVRO_PAY_ATTESTED_V1_ABI,
       functionName: isNative ? "depositNativeWithOrder" : "depositErc20WithOrder",
       args: [
         {
@@ -102,11 +102,11 @@ export function buildEvmAttestedDepositRequest(params: {
 /**
  * Legacy/basic deposit helper for old `HfiPayDeposit` deployments.
  *
- * Current HFI Pay quotes use `buildEvmAttestedDepositRequest` with
+ * Current Givro quotes use `buildEvmAttestedDepositRequest` with
  * `depositNativeWithOrder` / `depositErc20WithOrder`; do not use this helper
  * for attested Rail 1 quotes.
  *
- * @deprecated Use `buildEvmAttestedDepositRequest` for current HFI Pay quotes.
+ * @deprecated Use `buildEvmAttestedDepositRequest` for current Givro quotes.
  */
 export function buildEvmDepositRequest(params: {
   depositContract: Address;
@@ -120,7 +120,7 @@ export function buildEvmDepositRequest(params: {
       to: params.depositContract,
       value: params.amount,
       data: encodeFunctionData({
-        abi: HFI_PAY_DEPOSIT_ABI,
+        abi: GIVRO_PAY_DEPOSIT_ABI,
         functionName: "depositNative",
         args: [params.paymentRef],
       }),
@@ -130,7 +130,7 @@ export function buildEvmDepositRequest(params: {
     to: params.depositContract,
     value: 0n,
     data: encodeFunctionData({
-      abi: HFI_PAY_DEPOSIT_ABI,
+      abi: GIVRO_PAY_DEPOSIT_ABI,
       functionName: "depositErc20",
       args: [params.paymentRef, params.token, params.amount],
     }),
@@ -147,7 +147,7 @@ export function buildEvmCancelRequest(params: {
     to: params.depositContract,
     value: 0n,
     data: encodeFunctionData({
-      abi: HFI_PAY_ATTESTED_V1_ABI,
+      abi: GIVRO_PAY_ATTESTED_V1_ABI,
       functionName: "cancelByPayer",
       args: [params.paymentRef],
     }),
@@ -172,7 +172,7 @@ export function buildEvmBindTx(params: {
     to: params.attestedContract,
     value: 0n,
     data: encodeFunctionData({
-      abi: HFI_PAY_ATTESTED_V1_ABI,
+      abi: GIVRO_PAY_ATTESTED_V1_ABI,
       functionName: "bind",
       args: [params.message, params.recipientSig, params.serverSig],
     }),
@@ -192,7 +192,7 @@ export function buildEvmRevokePendingTx(params: {
     to: params.attestedContract,
     value: 0n,
     data: encodeFunctionData({
-      abi: HFI_PAY_ATTESTED_V1_ABI,
+      abi: GIVRO_PAY_ATTESTED_V1_ABI,
       functionName: "revokePending",
       args: [params.idHash, params.nonce, params.deadline, params.sig],
     }),
@@ -209,7 +209,7 @@ export function buildEvmClaimTx(params: {
     to: params.attestedContract,
     value: 0n,
     data: encodeFunctionData({
-      abi: HFI_PAY_ATTESTED_V1_ABI,
+      abi: GIVRO_PAY_ATTESTED_V1_ABI,
       functionName: "claim",
       args: [params.paymentRef],
     }),
@@ -226,7 +226,7 @@ export function buildEvmRefundTx(params: {
     to: params.attestedContract,
     value: 0n,
     data: encodeFunctionData({
-      abi: HFI_PAY_ATTESTED_V1_ABI,
+      abi: GIVRO_PAY_ATTESTED_V1_ABI,
       functionName: "refund",
       args: [params.paymentRef],
     }),

@@ -8,7 +8,7 @@
 
 接收方不需要任何特殊钱包支持——用户收到通知后打开网页，用任意标准钱包签名 claim 即可。
 
-SDK 使用 `vm` / `ecosystem` 字段选择结算虚拟机：`evm`、`solana` 或 `tron`。EVM 的具体网络通过 `chainId` 指定；某条链或某个 token 是否可用，取决于对应 HFI Portal 部署配置，而不是 SDK 客户端硬编码。
+SDK 使用 `vm` / `ecosystem` 字段选择结算虚拟机：`evm`、`solana` 或 `tron`。EVM 的具体网络通过 `chainId` 指定；某条链或某个 token 是否可用，取决于对应 Givro Portal 部署配置，而不是 SDK 客户端硬编码。
 
 ## 安装
 
@@ -26,7 +26,7 @@ npm install wagmi @tanstack/react-query
 ```typescript
 import { fetchPublicSupportedAssets } from 'givro-sdk';
 
-const runtime = await fetchPublicSupportedAssets('https://hfi.network');
+const runtime = await fetchPublicSupportedAssets('https://givro.to');
 ```
 
 该接口用于 onboarding 或受控构建步骤，返回当前 chain、token 以及 Portal 发布的
@@ -42,21 +42,21 @@ discovery response 推断为完整闭环；未完成 Program、marker、指令�
 
 ## Solana 集成
 
-### 完整发送流程（推荐，使用 HfiPayClient）
+### 完整发送流程（推荐，使用 GivroPayClient）
 
 ```typescript
-import { createHfiPayClient } from 'givro-sdk';
+import { createGivroPayClient } from 'givro-sdk';
 import { Connection, PublicKey } from '@solana/web3.js';
 import { REVIEWED_HFI_PROGRAMS } from './hfi-reviewed-deployments.js';
 
-const client = createHfiPayClient({
+const client = createGivroPayClient({
   quoteUrl: 'http://localhost:3100/api/intent/quote',
   trustedSolanaPrograms: {
     devnet: [REVIEWED_HFI_PROGRAMS.devnet],
   },
 });
 
-async function sendViaHfiPay(params: {
+async function sendViaGivroPay(params: {
   recipientIdentifier: string;   // 'alice@gmail.com' 或 '@alice'
   identifierKind: 'email' | 'x';            // phone 尚未上线
   amountRaw: string;             // 最小单位，如 USDC 1.00 = '1000000'
@@ -110,14 +110,14 @@ Portal 同时成为 quote 与待签交易内容的唯一信任来源。
 
 ## EVM 集成
 
-### 使用 HfiPayClient（推荐）
+### 使用 GivroPayClient（推荐）
 
 ```typescript
-import { createHfiPayClient } from 'givro-sdk';
+import { createGivroPayClient } from 'givro-sdk';
 import { REVIEWED_HFI_CONTRACTS } from './hfi-reviewed-deployments.js';
 
-const client = createHfiPayClient({
-  quoteUrl: 'https://hfi.network/api/intent/quote',
+const client = createGivroPayClient({
+  quoteUrl: 'https://givro.to/api/intent/quote',
   trustedAttestedContracts: {
     'evm:8453': [REVIEWED_HFI_CONTRACTS.base],
   },
@@ -158,8 +158,8 @@ EVM 原生币符号必须与 `chainId` 一起解析，并按链严格匹配：�
 
 ```typescript
 import {
-  createHfiPayClient,
-  HFI_PAY_ATTESTED_ABI_TRON,
+  createGivroPayClient,
+  GIVRO_PAY_ATTESTED_ABI_TRON,
   TRON_ATTESTED_ZERO_RELAY,
   toBaseUnits,
 } from 'givro-sdk';
@@ -169,9 +169,9 @@ const chainId = 728126428;
 const tronWeb = window.tronWeb;
 if (!tronWeb?.defaultAddress?.base58) throw new Error('Connect TronLink first');
 
-const client = createHfiPayClient({
-  quoteUrl: 'https://hfi.network/api/intent/quote',
-  portalBaseUrl: 'https://hfi.network',
+const client = createGivroPayClient({
+  quoteUrl: 'https://givro.to/api/intent/quote',
+  portalBaseUrl: 'https://givro.to',
   trustedAttestedContracts: {
     [`tron:${chainId}`]: [REVIEWED_HFI_CONTRACTS.tron],
   },
@@ -205,7 +205,7 @@ async function fund(tokenInput: 'TRX' | string, amountRaw: string, amountHuman: 
   const order = { ...rawOrder, token: toBase58(rawOrder.token) };
   const settlementAddress = toBase58(quote.attestedContract!);
   const originRelay = toBase58(TRON_ATTESTED_ZERO_RELAY);
-  const settlement = await tronWeb.contract(HFI_PAY_ATTESTED_ABI_TRON, settlementAddress);
+  const settlement = await tronWeb.contract(GIVRO_PAY_ATTESTED_ABI_TRON, settlementAddress);
 
   let txId: string;
   if (quote.token === 'native') {
@@ -238,8 +238,8 @@ await fund('TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t', toBaseUnits('10', 6), '10');
 
 ### 交易构造安全边界
 
-应用必须通过 `HfiPayClient.prepareEvmTransactions` 或
-`HfiPayClient.prepareSolanaTransaction` 构造资金交易，并在客户端配置经过发布审核的
+应用必须通过 `GivroPayClient.prepareEvmTransactions` 或
+`GivroPayClient.prepareSolanaTransaction` 构造资金交易，并在客户端配置经过发布审核的
 `trustedAttestedContracts` / `trustedSolanaPrograms`。SDK 不再从包根导出可直接接受
 报价返回地址的低层资金构造器，避免报价服务单独改变 spender、结算合约或 Solana
 Program。
@@ -259,7 +259,7 @@ Program。
 - base58（长度 32-44）→ Solana 地址
 - 手机号仅在 Portal 明确上线后再显示和识别
 
-识别为 identifier 后自动走 HFI Pay 流程，用户无需手动切换。
+识别为 identifier 后自动走 Givro 流程，用户无需手动切换。
 
 SDK 提供 `normalizeRecipient` 辅助函数：
 

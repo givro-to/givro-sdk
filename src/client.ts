@@ -1,14 +1,14 @@
 import type { Connection } from "@solana/web3.js";
 import { PublicKey } from "@solana/web3.js";
 import type { Address } from "viem";
-import { HfiPayBuildTxError, HfiPayQuoteError } from "./errors.js";
+import { GivroPayBuildTxError, GivroPayQuoteError } from "./errors.js";
 import { normalizeRecipient, type RecipientKind } from "./identifier.js";
 import { canonicalQuoteToken, fetchPaymentQuote } from "./quote.js";
 import { paymentRefHexToBytes } from "./solana/utils.js";
 import {
   buildSolanaAttestedDepositTransaction,
 } from "./solana/prepareSolanaDeposit.js";
-import type { ChainVm, HfiPayClientConfig, PaymentQuote, QuoteRequestBody } from "./types.js";
+import type { ChainVm, GivroPayClientConfig, PaymentQuote, QuoteRequestBody } from "./types.js";
 import { tronAttestedOrderTupleFromQuote } from "./tron/prepareTronAttestedDeposit.js";
 import {
   buildEvmApproveRequest,
@@ -17,7 +17,7 @@ import {
 } from "./evm/prepareEvmDeposit.js";
 
 /** Derive the portal base URL from the quote URL when not explicitly configured. */
-function derivePortalBaseUrl(config: HfiPayClientConfig): string {
+function derivePortalBaseUrl(config: GivroPayClientConfig): string {
   if (config.portalBaseUrl) return config.portalBaseUrl.replace(/\/$/, "");
   try {
     const u = new URL(config.quoteUrl);
@@ -27,8 +27,8 @@ function derivePortalBaseUrl(config: HfiPayClientConfig): string {
   }
 }
 
-export class HfiPayClient {
-  constructor(private readonly config: HfiPayClientConfig) {}
+export class GivroPayClient {
+  constructor(private readonly config: GivroPayClientConfig) {}
 
   private tokensEqual(vm: ChainVm, left: string, right: string, chainId?: number): boolean {
     const canonicalLeft = canonicalQuoteToken(vm, left, chainId);
@@ -44,7 +44,7 @@ export class HfiPayClient {
 
   private assertTrustedAttestedContract(q: PaymentQuote): void {
     if (!q.attestedContract || q.chainId == null) {
-      throw new HfiPayQuoteError("missing attestedContract/chainId");
+      throw new GivroPayQuoteError("missing attestedContract/chainId");
     }
     const key = `${q.ecosystem}:${q.chainId}`;
     const trusted = this.config.trustedAttestedContracts?.[key] ?? [];
@@ -54,22 +54,22 @@ export class HfiPayClient {
       && !/^0x0{40}$/i.test(address)
     );
     if (!isCanonicalNonZeroHexAddress(quoted)) {
-      throw new HfiPayQuoteError(`attested contract is not a canonical non-zero address for ${key}`);
+      throw new GivroPayQuoteError(`attested contract is not a canonical non-zero address for ${key}`);
     }
     const matches = trusted.some((address) => (
       isCanonicalNonZeroHexAddress(address)
       && address.toLowerCase() === quoted.toLowerCase()
     ));
     if (!matches) {
-      throw new HfiPayQuoteError(`attested contract is not trusted for ${key}`);
+      throw new GivroPayQuoteError(`attested contract is not trusted for ${key}`);
     }
   }
 
   private assertTrustedSolanaProgram(q: PaymentQuote, cluster: string): string {
-    if (!q.programId) throw new HfiPayQuoteError("Solana quote missing programId");
+    if (!q.programId) throw new GivroPayQuoteError("Solana quote missing programId");
     const trusted = this.config.trustedSolanaPrograms?.[cluster] ?? [];
     if (!trusted.includes(q.programId)) {
-      throw new HfiPayQuoteError(`Solana program is not trusted for ${cluster}`);
+      throw new GivroPayQuoteError(`Solana program is not trusted for ${cluster}`);
     }
     return q.programId;
   }
@@ -78,17 +78,17 @@ export class HfiPayClient {
     programId: string;
     solanaOrder: NonNullable<PaymentQuote["solanaOrder"]>;
   } {
-    if (!q.solanaOrder || !q.programId) throw new HfiPayQuoteError("Solana quote missing programId/solanaOrder");
-    if (!/^0x[0-9a-fA-F]{64}$/.test(q.solanaOrder.idHash)) throw new HfiPayQuoteError("Solana quote has invalid idHash");
-    if (!/^\d+$/.test(q.amount) || BigInt(q.amount) <= 0n) throw new HfiPayQuoteError("Solana quote has invalid amount");
+    if (!q.solanaOrder || !q.programId) throw new GivroPayQuoteError("Solana quote missing programId/solanaOrder");
+    if (!/^0x[0-9a-fA-F]{64}$/.test(q.solanaOrder.idHash)) throw new GivroPayQuoteError("Solana quote has invalid idHash");
+    if (!/^\d+$/.test(q.amount) || BigInt(q.amount) <= 0n) throw new GivroPayQuoteError("Solana quote has invalid amount");
     if (![q.solanaOrder.cancelBefore, q.solanaOrder.claimBefore, q.solanaOrder.refundAfter].every((value) => /^\d+$/.test(value))) {
-      throw new HfiPayQuoteError("Solana quote has invalid lifecycle windows");
+      throw new GivroPayQuoteError("Solana quote has invalid lifecycle windows");
     }
     const cancelBefore = BigInt(q.solanaOrder.cancelBefore);
     const claimBefore = BigInt(q.solanaOrder.claimBefore);
     const refundAfter = BigInt(q.solanaOrder.refundAfter);
     if (!(cancelBefore <= claimBefore && claimBefore < refundAfter)) {
-      throw new HfiPayQuoteError("Solana quote has invalid lifecycle windows");
+      throw new GivroPayQuoteError("Solana quote has invalid lifecycle windows");
     }
   }
 
@@ -97,42 +97,42 @@ export class HfiPayClient {
     attestedOrder: NonNullable<PaymentQuote["attestedOrder"]>;
   } {
     if (!q.attestedContract || !q.attestedOrder) {
-      throw new HfiPayQuoteError("missing attestedContract/attestedOrder");
+      throw new GivroPayQuoteError("missing attestedContract/attestedOrder");
     }
     const o = q.attestedOrder;
     if (!o.paymentRef || !o.idHash || !o.token) {
-      throw new HfiPayQuoteError("attested quote missing order.paymentRef/idHash/token");
+      throw new GivroPayQuoteError("attested quote missing order.paymentRef/idHash/token");
     }
     if (!this.tokensEqual(q.ecosystem, q.token, o.token, q.chainId)) {
-      throw new HfiPayQuoteError("attested quote token mismatch: quote.token must match order.token");
+      throw new GivroPayQuoteError("attested quote token mismatch: quote.token must match order.token");
     }
     if (q.paymentRef.toLowerCase() !== o.paymentRef.toLowerCase()) {
-      throw new HfiPayQuoteError("attested quote paymentRef mismatch");
+      throw new GivroPayQuoteError("attested quote paymentRef mismatch");
     }
     if (q.chainId == null || BigInt(q.chainId) !== o.chainId) {
-      throw new HfiPayQuoteError("attested quote chainId mismatch");
+      throw new GivroPayQuoteError("attested quote chainId mismatch");
     }
     if (!/^\d+$/.test(q.amount) || BigInt(q.amount) !== o.amount) {
-      throw new HfiPayQuoteError("attested quote amount mismatch");
+      throw new GivroPayQuoteError("attested quote amount mismatch");
     }
     if (!(o.cancelBefore <= o.claimBefore && o.claimBefore < o.refundAfter)) {
-      throw new HfiPayQuoteError("attested quote has invalid lifecycle windows");
+      throw new GivroPayQuoteError("attested quote has invalid lifecycle windows");
     }
   }
 
   private assertQuoteMatchesRequest(q: PaymentQuote, request: QuoteRequestBody): void {
     const vm = (request.vm ?? request.ecosystem) as ChainVm | undefined;
-    if (!vm || q.ecosystem !== vm) throw new HfiPayQuoteError("ecosystem does not match request");
+    if (!vm || q.ecosystem !== vm) throw new GivroPayQuoteError("ecosystem does not match request");
     if (request.chainId != null && q.chainId !== request.chainId) {
-      throw new HfiPayQuoteError("chainId does not match request");
+      throw new GivroPayQuoteError("chainId does not match request");
     }
     const actualToken = q.attestedOrder?.token ?? q.token;
     if (!this.requestTokenMatches(vm, request.token, actualToken, q.chainId ?? request.chainId)) {
-      throw new HfiPayQuoteError("token does not match request");
+      throw new GivroPayQuoteError("token does not match request");
     }
     const actualAmount = q.attestedOrder?.amount.toString() ?? q.amount;
     if (actualAmount !== request.amountWei) {
-      throw new HfiPayQuoteError("amount does not match request");
+      throw new GivroPayQuoteError("amount does not match request");
     }
     if (q.attestedOrder) this.assertAttestedOrderComplete(q);
   }
@@ -144,7 +144,7 @@ export class HfiPayClient {
       ecosystem: (body.vm ?? body.ecosystem) as ChainVm,
     };
     const vm = normalized.vm ?? normalized.ecosystem;
-    if (!vm) throw new HfiPayQuoteError("fetchQuote: vm (or ecosystem) is required");
+    if (!vm) throw new GivroPayQuoteError("fetchQuote: vm (or ecosystem) is required");
     normalized.token = canonicalQuoteToken(vm, normalized.token, normalized.chainId);
     let quoteUrl = this.config.quoteUrl;
     if (vm === "tron") {
@@ -153,8 +153,8 @@ export class HfiPayClient {
       } else {
         const base = derivePortalBaseUrl(this.config);
         if (!base) {
-          throw new HfiPayQuoteError(
-            "fetchQuote(tron): set portalBaseUrl or intentQuoteUrl in HfiPayClientConfig",
+          throw new GivroPayQuoteError(
+            "fetchQuote(tron): set portalBaseUrl or intentQuoteUrl in GivroPayClientConfig",
           );
         }
         quoteUrl = `${base}/api/intent/quote`;
@@ -205,7 +205,7 @@ export class HfiPayClient {
     senderWalletEcosystem?: "evm" | "solana" | "tron";
   }): Promise<PaymentQuote> {
     const vm = (params.vm ?? params.ecosystem) as ChainVm | undefined;
-    if (!vm) throw new HfiPayQuoteError("quoteSend: vm (or ecosystem) is required");
+    if (!vm) throw new GivroPayQuoteError("quoteSend: vm (or ecosystem) is required");
     const identifier = normalizeRecipient(params.recipientKind, params.recipient);
     return this.fetchQuote({
       identifier,
@@ -246,7 +246,7 @@ export class HfiPayClient {
     originRelayAddress?: Address;
   }): { approve: ReturnType<typeof buildEvmApproveRequest> | null; deposit: ReturnType<typeof buildEvmAttestedDepositRequest> } {
     const q = params.quote;
-    if (q.ecosystem !== "evm") throw new HfiPayBuildTxError("quote ecosystem must be evm");
+    if (q.ecosystem !== "evm") throw new GivroPayBuildTxError("quote ecosystem must be evm");
     const isAttested = Boolean(q.attestedContract && q.attestedOrder);
 
     if (isAttested) {
@@ -271,7 +271,7 @@ export class HfiPayClient {
       return { approve, deposit };
     }
 
-    throw new HfiPayBuildTxError("attested EVM quote required: quote must include attestedContract and attestedOrder");
+    throw new GivroPayBuildTxError("attested EVM quote required: quote must include attestedContract and attestedOrder");
   }
 
   /**
@@ -291,7 +291,7 @@ export class HfiPayClient {
     },
   ): Promise<import("@solana/web3.js").VersionedTransaction> {
     const q = params.quote;
-    if (q.ecosystem !== "solana") throw new HfiPayBuildTxError("quote ecosystem must be solana");
+    if (q.ecosystem !== "solana") throw new GivroPayBuildTxError("quote ecosystem must be solana");
 
     this.assertSolanaOrderComplete(q);
     const programId = new PublicKey(this.assertTrustedSolanaProgram(q, params.cluster));
@@ -319,6 +319,6 @@ export class HfiPayClient {
 
 }
 
-export function createHfiPayClient(config: HfiPayClientConfig): HfiPayClient {
-  return new HfiPayClient(config);
+export function createGivroPayClient(config: GivroPayClientConfig): GivroPayClient {
+  return new GivroPayClient(config);
 }

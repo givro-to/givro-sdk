@@ -1,7 +1,7 @@
 {
   "name": "givro-sdk",
   "version": "0.1.0",
-  "description": "HFI Pay SDK for identifier-routed EVM, Tron, and future Solana payment integrations",
+  "description": "Givro SDK for identifier-routed EVM, Tron, and future Solana payment integrations",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

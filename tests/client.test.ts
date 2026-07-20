@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
-import { HfiPayClient } from "../src/client.js";
-import { HfiPayBuildTxError, HfiPayQuoteError } from "../src/errors.js";
+import { GivroPayClient } from "../src/client.js";
+import { GivroPayBuildTxError, GivroPayQuoteError } from "../src/errors.js";
 import type { PaymentQuote } from "../src/types.js";
 import type { QuoteRequestBody } from "../src/types.js";
 
-describe("HfiPayClient.prepareEvmTransactions", () => {
+describe("GivroPayClient.prepareEvmTransactions", () => {
   const attestedContract = "0xdeadbeef00000000000000000000000000000002";
-  const client = new HfiPayClient({
+  const client = new GivroPayClient({
     quoteUrl: "https://example.com/quote",
     trustedAttestedContracts: { "evm:11155111": [attestedContract] },
   });
@@ -88,7 +88,7 @@ describe("HfiPayClient.prepareEvmTransactions", () => {
       chainId: 11155111,
       depositContract: "0xdeadbeef00000000000000000000000000000001",
     };
-    expect(() => client.prepareEvmTransactions({ quote })).toThrow(HfiPayBuildTxError);
+    expect(() => client.prepareEvmTransactions({ quote })).toThrow(GivroPayBuildTxError);
   });
 
   it("rejects attested quotes when top-level token differs from order token", () => {
@@ -132,12 +132,12 @@ describe("HfiPayClient.prepareEvmTransactions", () => {
         refundAfter: 3n,
       },
     };
-    expect(() => client.prepareEvmTransactions({ quote })).toThrow(HfiPayQuoteError);
+    expect(() => client.prepareEvmTransactions({ quote })).toThrow(GivroPayQuoteError);
   });
 
   it("rejects a zero settlement contract even when it is pinned", () => {
     const zero = "0x0000000000000000000000000000000000000000";
-    const zeroPinnedClient = new HfiPayClient({
+    const zeroPinnedClient = new GivroPayClient({
       quoteUrl: "https://example.com/quote",
       trustedAttestedContracts: { "evm:11155111": [zero] },
     });
@@ -186,7 +186,7 @@ describe("HfiPayClient.prepareEvmTransactions", () => {
   });
 });
 
-describe("HfiPayClient.fetchQuote (Tron)", () => {
+describe("GivroPayClient.fetchQuote (Tron)", () => {
   it("posts to /api/intent/quote derived from portalBaseUrl", async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
@@ -213,9 +213,9 @@ describe("HfiPayClient.fetchQuote (Tron)", () => {
         }),
     } as unknown as Response);
 
-    const client = new HfiPayClient({
-      quoteUrl: "https://testnet.hfi.network/api/intent/quote",
-      portalBaseUrl: "https://testnet.hfi.network",
+    const client = new GivroPayClient({
+      quoteUrl: "https://sandbox.example.com/api/intent/quote",
+      portalBaseUrl: "https://sandbox.example.com",
       fetchImpl: mockFetch,
     });
 
@@ -230,7 +230,7 @@ describe("HfiPayClient.fetchQuote (Tron)", () => {
     };
     await client.fetchQuote(body);
     const [url] = mockFetch.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe("https://testnet.hfi.network/api/intent/quote");
+    expect(url).toBe("https://sandbox.example.com/api/intent/quote");
   });
 
   it("canonicalizes TRX before sending and accepts the canonical native response", async () => {
@@ -247,7 +247,7 @@ describe("HfiPayClient.fetchQuote (Tron)", () => {
         amount: "1",
       }),
     } as unknown as Response);
-    const client = new HfiPayClient({
+    const client = new GivroPayClient({
       quoteUrl: "https://example.com/api/intent/quote",
       fetchImpl: mockFetch,
     });
@@ -265,7 +265,7 @@ describe("HfiPayClient.fetchQuote (Tron)", () => {
   });
 
   it("matches canonical Tron hex contract pins case-insensitively", () => {
-    const pinned = new HfiPayClient({
+    const pinned = new GivroPayClient({
       quoteUrl: "https://example.com/api/intent/quote",
       trustedAttestedContracts: {
         "tron:728126428": ["0xabcdef00000000000000000000000000000000aa"],
@@ -294,7 +294,7 @@ describe("HfiPayClient.fetchQuote (Tron)", () => {
 
   it("rejects a non-canonical Tron settlement pin", () => {
     const base58 = "TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE";
-    const pinned = new HfiPayClient({
+    const pinned = new GivroPayClient({
       quoteUrl: "https://example.com/api/intent/quote",
       trustedAttestedContracts: { "tron:728126428": [base58] },
     });
@@ -321,7 +321,7 @@ describe("HfiPayClient.fetchQuote (Tron)", () => {
   });
 });
 
-describe("HfiPayClient.fetchQuote native token aliases", () => {
+describe("GivroPayClient.fetchQuote native token aliases", () => {
   it("canonicalizes ETH and matches a zero-address EVM response", async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
@@ -335,7 +335,7 @@ describe("HfiPayClient.fetchQuote native token aliases", () => {
         amountWei: "1",
       }),
     } as unknown as Response);
-    const client = new HfiPayClient({ quoteUrl: "https://example.com/quote", fetchImpl: mockFetch });
+    const client = new GivroPayClient({ quoteUrl: "https://example.com/quote", fetchImpl: mockFetch });
     await expect(client.fetchQuote({
       identifier: "u@x.co",
       identifierKind: "email",
@@ -360,7 +360,7 @@ describe("HfiPayClient.fetchQuote native token aliases", () => {
         amountWei: "1",
       }),
     } as unknown as Response);
-    const client = new HfiPayClient({ quoteUrl: "https://example.com/quote", fetchImpl: mockFetch });
+    const client = new GivroPayClient({ quoteUrl: "https://example.com/quote", fetchImpl: mockFetch });
     await expect(client.fetchQuote({
       identifier: "u@x.co",
       identifierKind: "email",

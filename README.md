@@ -3,9 +3,9 @@
 **License:** MIT  
 **Package:** TypeScript / ESM SDK  
 **Supported settlement VMs:** EVM, Tron, and Solana helpers  
-**Status:** Mainnet pilot; production availability is determined by the HFI Portal configuration for each `vm` / `ecosystem`, `chainId`, and token.
+**Status:** Mainnet pilot; production availability is determined by the Givro Portal configuration for each `vm` / `ecosystem`, `chainId`, and token.
 
-TypeScript SDK for [HFI.Network](https://hfi.network) — build identifier-routed crypto payment integrations. The current public rollout enables email and X handle flows; phone remains a typed integration target and must not be presented as live unless the active Portal configuration explicitly enables it. The SDK routes requests by `vm` / `ecosystem` (`"evm"`, `"tron"`, or `"solana"`) and forwards `chainId` to the quote service where applicable. The client library does not hard-code a single EVM network; actual production support is controlled by the HFI Portal deployment and its enabled chains/tokens.
+TypeScript SDK for [Givro.Network](https://givro.to) — build identifier-routed crypto payment integrations. The current public rollout enables email and X handle flows; phone remains a typed integration target and must not be presented as live unless the active Portal configuration explicitly enables it. The SDK routes requests by `vm` / `ecosystem` (`"evm"`, `"tron"`, or `"solana"`) and forwards `chainId` to the quote service where applicable. The client library does not hard-code a single EVM network; actual production support is controlled by the Givro Portal deployment and its enabled chains/tokens.
 
 ## Network Scope
 
@@ -33,7 +33,7 @@ contracts:
 ```typescript
 import { fetchPublicSupportedAssets } from "givro-sdk";
 
-const runtime = await fetchPublicSupportedAssets("https://hfi.network");
+const runtime = await fetchPublicSupportedAssets("https://givro.to");
 console.table(runtime.chains);
 ```
 
@@ -71,12 +71,12 @@ chain-specific registries; settlement pins must be canonical non-zero `0x`
 addresses.
 
 ```typescript
-import { createHfiPayClient } from "givro-sdk";
+import { createGivroPayClient } from "givro-sdk";
 import { sendTransaction, waitForTransactionReceipt } from "wagmi/actions";
 import { REVIEWED_HFI_CONTRACTS } from "./hfi-reviewed-deployments.js";
 
-const client = createHfiPayClient({
-  quoteUrl: "https://hfi.network/api/intent/quote",
+const client = createGivroPayClient({
+  quoteUrl: "https://givro.to/api/intent/quote",
   trustedAttestedContracts: {
     "evm:8453": [REVIEWED_HFI_CONTRACTS.base],
   },
@@ -93,7 +93,7 @@ const quote = await client.quoteSend({
   amountHuman: "0.01",
   token: "0x0000000000000000000000000000000000000000", // native ETH
   vm: "evm",
-  chainId: 8453, // EVM chain ID enabled by your HFI Portal deployment
+  chainId: 8453, // EVM chain ID enabled by your Givro Portal deployment
   turnstile: turnstileToken,
 });
 
@@ -146,22 +146,22 @@ token and let the user retry; never replay the previous request token.
 ## Quick start — Tron
 
 The SDK exposes Tron quote normalization and the order tuple needed by TronWeb
-to call `HfiPayAttested.depositNativeWithOrder` or
+to call `GivroPayAttested.depositNativeWithOrder` or
 `depositErc20WithOrder`. The following covers both TRX and TRC-20 funding,
 including exact approval and mined-receipt confirmation.
 
 ```typescript
 import {
-  createHfiPayClient,
-  HFI_PAY_ATTESTED_ABI_TRON,
+  createGivroPayClient,
+  GIVRO_PAY_ATTESTED_ABI_TRON,
   TRON_ATTESTED_ZERO_RELAY,
   toBaseUnits,
 } from "givro-sdk";
 import { REVIEWED_HFI_CONTRACTS } from "./hfi-reviewed-deployments.js";
 
-const client = createHfiPayClient({
-  quoteUrl: "https://hfi.network/api/intent/quote",
-  portalBaseUrl: "https://hfi.network",
+const client = createGivroPayClient({
+  quoteUrl: "https://givro.to/api/intent/quote",
+  portalBaseUrl: "https://givro.to",
   trustedAttestedContracts: {
     "tron:728126428": [REVIEWED_HFI_CONTRACTS.tron],
   },
@@ -214,7 +214,7 @@ async function sendTron(params: {
   const order = { ...quotedOrder, token: toTronBase58(quotedOrder.token) };
   const settlementBase58 = toTronBase58(quote.attestedContract!);
   const originRelay = toTronBase58(TRON_ATTESTED_ZERO_RELAY);
-  const settlement = await tronWeb.contract(HFI_PAY_ATTESTED_ABI_TRON, settlementBase58);
+  const settlement = await tronWeb.contract(GIVRO_PAY_ATTESTED_ABI_TRON, settlementBase58);
 
   let fundingTxId: string;
   if (quote.token === "native") {
@@ -243,7 +243,7 @@ async function sendTron(params: {
       .send({ feeLimit: 150_000_000 });
   }
   await waitForTronConfirmation(fundingTxId);
-  return { fundingTxId, claimUrl: `https://hfi.network/claim?ref=${quote.paymentRef}` };
+  return { fundingTxId, claimUrl: `https://givro.to/claim?ref=${quote.paymentRef}` };
 }
 
 await sendTron({ token: "TRX", amountRaw: toBaseUnits("1", 6), amountHuman: "1" });
@@ -264,11 +264,11 @@ Solana program, mint registry, quote, wallet, indexing, and lifecycle support.
 The following example is for a local development Portal only.
 
 ```typescript
-import { createHfiPayClient } from "givro-sdk";
+import { createGivroPayClient } from "givro-sdk";
 import { Connection, clusterApiUrl } from "@solana/web3.js";
 import { REVIEWED_HFI_PROGRAMS } from "./hfi-reviewed-deployments.js";
 
-const client = createHfiPayClient({
+const client = createGivroPayClient({
   quoteUrl: "http://localhost:3100/api/intent/quote",
   trustedSolanaPrograms: {
     devnet: [REVIEWED_HFI_PROGRAMS.devnet],
@@ -321,8 +321,8 @@ not hard-code a five- or ten-minute window in an integration.
 ## Client config
 
 ```typescript
-const client = createHfiPayClient({
-  quoteUrl: "https://hfi.network/api/intent/quote",
+const client = createGivroPayClient({
+  quoteUrl: "https://givro.to/api/intent/quote",
   timeoutMs: 10_000,          // request timeout (default 10s)
   retry: { maxAttempts: 3, baseDelayMs: 400 },  // non-Turnstile requests only
   defaultHeaders: { "X-My-App": "v1" },
@@ -359,8 +359,8 @@ const amountUsdc = toBaseUnits("50", 6);   // USDC
 
 | Export | Description |
 |---|---|
-| `createHfiPayClient(config)` | Create a client instance |
-| `HfiPayClient` | Client class |
+| `createGivroPayClient(config)` | Create a client instance |
+| `GivroPayClient` | Client class |
 | `fetchPaymentQuote(url, body, opts)` | Low-level quote fetch |
 | `fetchPublicSupportedAssets(portalBaseUrl, opts)` | Typed runtime chain/token/contract discovery for onboarding and review |
 | `isNativeEvmToken(address)` | True for 0x000… / 0xeee… |
@@ -370,23 +370,23 @@ const amountUsdc = toBaseUnits("50", 6);   // USDC
 | `signAndSendSolanaAttestedDeposit(wallet, connection, params)` | Build and send from independently reviewed Solana parameters |
 | `waitForSolanaConfirmation(connection, signature, timeoutMs?)` | Wait for confirmed/finalized Solana status |
 | `normalizeRecipient(kind, value)` | Normalize email / x / phone |
-| `HfiPayError`, `HfiPayNetworkError`, etc. | Typed error classes |
-| `getNetwork(name)` | Get network config (devnet / testnet / mainnet) |
+| `GivroPayError`, `GivroPayNetworkError`, etc. | Typed error classes |
+| `getNetwork(name)` | Get network config (devnet / mainnet) |
 
 ## Error handling
 
 ```typescript
-import { HfiPayError, HfiPayNetworkError, HfiPayQuoteError } from "givro-sdk";
+import { GivroPayError, GivroPayNetworkError, GivroPayQuoteError } from "givro-sdk";
 
 try {
   const quote = await client.quoteSend({ ... });
 } catch (e) {
-  if (e instanceof HfiPayQuoteError) {
+  if (e instanceof GivroPayQuoteError) {
     console.error("Quote failed:", e.code, e.message);
-  } else if (e instanceof HfiPayNetworkError) {
+  } else if (e instanceof GivroPayNetworkError) {
     console.error("HTTP error:", e.statusCode, e.message);
-  } else if (e instanceof HfiPayError) {
-    console.error("HFI error:", e.code, e.message);
+  } else if (e instanceof GivroPayError) {
+    console.error("Givro error:", e.code, e.message);
   }
 }
 ```

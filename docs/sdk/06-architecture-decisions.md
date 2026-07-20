@@ -1,6 +1,6 @@
 # 架构决策记录
 
-记录 HFI Pay 关键设计选择的背景和权衡，供后续开发者理解。
+记录 Givro 关键设计选择的背景和权衡，供后续开发者理解。
 
 ---
 
@@ -31,7 +31,7 @@ Portal 提供 `POST /api/intent/build-solana-tx` 端点，
 - 钱包可避免自行实现 PDA 推导，但必须保留完整交易解析和策略校验能力
 - 未签名交易仍可能包含恶意 Program、账户权限或额外指令，不能直接签名
 - 同一 Portal 不能同时成为 quote 与待签交易内容的唯一信任根
-- 有 `@solana/web3.js` 的钱包应使用 `HfiPayClient.prepareSolanaTransaction` 本地构建，并通过 `trustedSolanaPrograms` 独立验证 Program ID
+- 有 `@solana/web3.js` 的钱包应使用 `GivroPayClient.prepareSolanaTransaction` 本地构建，并通过 `trustedSolanaPrograms` 独立验证 Program ID
 
 ---
 
@@ -108,13 +108,13 @@ if (isEmail(input) || isXHandle(input)) {
 
 ### 背景
 
-第三方钱包（MetaMask、Coinbase Wallet 等）接入 givro-sdk 后，每笔由其用户发起的支付都应归因到该集成方，以便 HFI 按约定比例结算收益分成。
+第三方钱包（MetaMask、Coinbase Wallet 等）接入 givro-sdk 后，每笔由其用户发起的支付都应归因到该集成方，以便 Givro 按约定比例结算收益分成。
 
 ### 约束
 
 1. 集成方（钱包厂商）**不允许有任何运行时 server 调用**——SDK 必须纯客户端，无需向集成方自己的服务器发请求
 2. 防止集成方身份被冒用（A 冒充 B 刷归因）
-3. HFI 能识别、禁用特定集成方
+3. Givro 能识别、禁用特定集成方
 
 ### 方案选择
 
@@ -122,19 +122,19 @@ if (isEmail(input) || isXHandle(input)) {
 合约验证 relay 对每笔 tx 的签名，私钥须嵌入 SDK bundle → 可被提取，等于无保护。
 
 **否决：VendorRegistry 合约白名单 + originShareBps**
-链上实时拆分费用，需要 HFI 调用 `setOriginShare()`；结合阶梯分账难以在合约层实现；且"A 填 B 地址"对 A 毫无收益（A 无法取走 B 地址的资金），经济模型天然防止冒用。
+链上实时拆分费用，需要 Givro 调用 `setOriginShare()`；结合阶梯分账难以在合约层实现；且"A 填 B 地址"对 A 毫无收益（A 无法取走 B 地址的资金），经济模型天然防止冒用。
 
 **采用：链下归因 + 离线结算**
 
 ```
-链上：feeBps（全局统一），所有费用打入 HFI treasury
+链上：feeBps（全局统一），所有费用打入 Givro treasury
 链下：按 originRelayAddress 统计各集成方带来的交易量，周期性结算
 ```
 
 ### 实现细节
 
-1. **地址生成**：集成方自行生成 keypair，将公钥地址提交给 HFI
-2. **HFI 审批**：HFI 将地址录入内部 partner 数据库（`partner_type = 'integrator'`）
+1. **地址生成**：集成方自行生成 keypair，将公钥地址提交给 Givro
+2. **Givro 审批**：Givro 将地址录入内部 partner 数据库（`partner_type = 'integrator'`）
 3. **交易构造**：集成方在每次构造交易时传入自己固定、审核过的归因地址
 
 ```typescript
@@ -149,7 +149,7 @@ Solana 对应在 `prepareSolanaTransaction` 参数中传入 base58
 `originRelay` 参数传入。
 
 4. **合约调用**：deposit 写入 `originRelayAddress`，合约记录该字段（纯归因，不做链上拆分）
-5. **结算**：HFI 按周期统计，依阶梯政策计算应付金额，转账到集成方地址
+5. **结算**：Givro 按周期统计，依阶梯政策计算应付金额，转账到集成方地址
 
 ### 冒用分析
 
@@ -166,13 +166,13 @@ Solana 对应在 `prepareSolanaTransaction` 参数中传入 base58
 ### 协议费率
 
 全网统一费率，当前为 **100 bps（1%）**，通过合约 `setFeeBps()` 可调整。
-所有费用实时打入 HFI treasury，不做链上拆分。
+所有费用实时打入 Givro treasury，不做链上拆分。
 
 ### 分成比例
 
 集成方分成为协议费的百分比，按每日交易笔数阶梯计算（边际税率模型，类似所得税）：
 
-| 每日笔数区间 | 该区间内集成方分成比例 | HFI 保留比例 |
+| 每日笔数区间 | 该区间内集成方分成比例 | Givro 保留比例 |
 |-------------|----------------------|-------------|
 | 0 – 999 笔 | 50% | 50% |
 | 1,000 – 9,999 笔 | 60% | 40% |
@@ -200,16 +200,16 @@ Solana 对应在 `prepareSolanaTransaction` 参数中传入 base58
 | 70% | 7000 |
 | 80% | 8000 |
 
-该字段由 HFI 运营方根据集成方实际交易量手动更新。
+该字段由 Givro 运营方根据集成方实际交易量手动更新。
 
 ### 结算周期
 
-按月结算，HFI 统计上月各集成方 `originRelayAddress` 的归因交易量，计算应付金额，转账到集成方控制的对应地址。
+按月结算，Givro 统计上月各集成方 `originRelayAddress` 的归因交易量，计算应付金额，转账到集成方控制的对应地址。
 
 ### 政策调整
 
 - 协议费率（`feeBps`）调整时，分成比例（百分比）不变，集成方绝对收益随之等比变化
-- 阶梯政策为公开信息，HFI 可单方面更新，提前 30 天通知现有集成方
+- 阶梯政策为公开信息，Givro 可单方面更新，提前 30 天通知现有集成方
 - 合同另有约定的从合同
 
 ---
@@ -229,7 +229,7 @@ Solana 对应在 `prepareSolanaTransaction` 参数中传入 base58
 该字符串嵌入在：
 - Rust `hfi-pay-core/src/auth.rs`：`DEPLOYMENT_DOMAIN`
 - Solana 合约 `lib.rs`：`DEPLOYMENT_DOMAIN`
-- EVM 合约 `HfiPayClaimDigest.sol`
+- EVM 合约 `GivroPayClaimDigest.sol`
 - TypeScript SDK `evm/claimDigest.ts`：`HFI_PAY_DEPLOYMENT_DOMAIN`
 
 ### 变更历史

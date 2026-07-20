@@ -1,20 +1,20 @@
 export { normalizeRecipient, normalizeEmail, type RecipientKind } from "./identifier.js";
 export { toBaseUnits } from "./amount.js";
 export {
-  HfiPayError,
-  HfiPayNetworkError,
-  HfiPayQuoteError,
-  HfiPayConfigError,
-  HfiPayTimeoutError,
-  HfiPayBuildTxError,
-  type HfiPayErrorCode,
+  GivroPayError,
+  GivroPayNetworkError,
+  GivroPayQuoteError,
+  GivroPayConfigError,
+  GivroPayTimeoutError,
+  GivroPayBuildTxError,
+  type GivroPayErrorCode,
 } from "./errors.js";
 export {
   getNetwork,
   NETWORKS,
   intentQuoteUrlForPortal,
   type NetworkName,
-  type HfiPayNetwork,
+  type GivroPayNetwork,
 } from "./config.js";
 export {
   fetchPaymentQuote,
@@ -36,12 +36,12 @@ export type {
   PaymentQuote,
   RpcIntent,
   QuoteRequestBody,
-  HfiPayClientConfig,
+  GivroPayClientConfig,
   PrepareEvmSendParams,
   PrepareSolanaSendParams,
   RetryOptions,
 } from "./types.js";
-export { HFI_PAY_DEPOSIT_ABI, HFI_PAY_ATTESTED_V1_ABI, ZERO_ADDRESS } from "./evm/abi.js";
+export { GIVRO_PAY_DEPOSIT_ABI, GIVRO_PAY_ATTESTED_V1_ABI, ZERO_ADDRESS } from "./evm/abi.js";
 export {
   HFI_PAY_DEPLOYMENT_DOMAIN,
   hfipayClaimDigestEvm,
@@ -58,7 +58,7 @@ export {
   type EvmTxRequest,
 } from "./evm/prepareEvmDeposit.js";
 export {
-  DEFAULT_HFI_PAY_PROGRAM_ID,
+  DEFAULT_GIVRO_PAY_PROGRAM_ID,
   DEPOSIT_NATIVE_DISCRIMINATOR,
   DEPOSIT_SPL_DISCRIMINATOR,
 } from "./solana/constants.js";
@@ -81,10 +81,10 @@ export {
   type SolanaDepositResult,
   type SolanaWalletLike,
 } from "./solana/walletAdapter.js";
-export { HfiPayClient, createHfiPayClient } from "./client.js";
+export { GivroPayClient, createGivroPayClient } from "./client.js";
 export {
   TRON_ATTESTED_ZERO_RELAY,
-  HFI_PAY_ATTESTED_ABI_TRON,
+  GIVRO_PAY_ATTESTED_ABI_TRON,
   assertTronAttestedQuote,
   type TronAttestedOrderTuple,
 } from "./tron/prepareTronAttestedDeposit.js";

@@ -12,7 +12,7 @@
    ├── 邮件："你收到了 100 USDC，点击领取 →"
    └── X DM："@alice 向你发送了 50 SOL，点击领取 →"
 
-2. 点击链接 → 跳转到 hfi.network/claim?ref=0x...
+2. 点击链接 → 跳转到 givro.to/claim?ref=0x...
 
 3. 身份验证
    ├── email：输入 OTP（发到邮箱）

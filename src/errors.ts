@@ -1,6 +1,6 @@
-/** Typed error hierarchy for HFI Pay SDK. All errors are instanceof-checkable. */
+/** Typed error hierarchy for Givro SDK. All errors are instanceof-checkable. */
 
-export type HfiPayErrorCode =
+export type GivroPayErrorCode =
   | "QUOTE_FETCH_FAILED"
   | "QUOTE_INVALID"
   | "QUOTE_TIMEOUT"
@@ -16,18 +16,18 @@ export type HfiPayErrorCode =
   | "TRANSACTION_FAILED"
   | "NETWORK_ERROR";
 
-export class HfiPayError extends Error {
-  readonly code: HfiPayErrorCode;
+export class GivroPayError extends Error {
+  readonly code: GivroPayErrorCode;
 
-  constructor(code: HfiPayErrorCode, message: string, options?: ErrorOptions) {
+  constructor(code: GivroPayErrorCode, message: string, options?: ErrorOptions) {
     super(message, options);
-    this.name = "HfiPayError";
+    this.name = "GivroPayError";
     this.code = code;
   }
 }
 
-/** HTTP error returned by an HFI Pay service endpoint. */
-export class HfiPayNetworkError extends HfiPayError {
+/** HTTP error returned by an Givro service endpoint. */
+export class GivroPayNetworkError extends GivroPayError {
   readonly statusCode: number;
   readonly responseBody: string;
 
@@ -38,49 +38,49 @@ export class HfiPayNetworkError extends HfiPayError {
   ) {
     super(
       options?.code ?? "QUOTE_FETCH_FAILED",
-      `HFI Pay service returned HTTP ${statusCode}: ${responseBody || "(empty)"}`,
+      `Givro service returned HTTP ${statusCode}: ${responseBody || "(empty)"}`,
       options,
     );
-    this.name = "HfiPayNetworkError";
+    this.name = "GivroPayNetworkError";
     this.statusCode = statusCode;
     this.responseBody = responseBody;
   }
 }
 
 /** Quote response was missing required fields or had an invalid shape. */
-export class HfiPayQuoteError extends HfiPayError {
+export class GivroPayQuoteError extends GivroPayError {
   constructor(message: string, options?: ErrorOptions) {
-    super("QUOTE_INVALID", `HFI Pay quote invalid: ${message}`, options);
-    this.name = "HfiPayQuoteError";
+    super("QUOTE_INVALID", `Givro quote invalid: ${message}`, options);
+    this.name = "GivroPayQuoteError";
   }
 }
 
 /** Public runtime configuration response was missing required fields. */
-export class HfiPayConfigError extends HfiPayError {
+export class GivroPayConfigError extends GivroPayError {
   constructor(message: string, options?: ErrorOptions) {
-    super("CONFIG_INVALID", `HFI Pay public configuration invalid: ${message}`, options);
-    this.name = "HfiPayConfigError";
+    super("CONFIG_INVALID", `Givro public configuration invalid: ${message}`, options);
+    this.name = "GivroPayConfigError";
   }
 }
 
-/** HFI Pay service request timed out before a response was received. */
-export class HfiPayTimeoutError extends HfiPayError {
+/** Givro service request timed out before a response was received. */
+export class GivroPayTimeoutError extends GivroPayError {
   readonly timeoutMs: number;
 
   constructor(
     timeoutMs: number,
     options?: ErrorOptions & { code?: "QUOTE_TIMEOUT" | "CONFIG_TIMEOUT" | "NETWORK_TIMEOUT" },
   ) {
-    super(options?.code ?? "QUOTE_TIMEOUT", `HFI Pay request timed out after ${timeoutMs}ms`, options);
-    this.name = "HfiPayTimeoutError";
+    super(options?.code ?? "QUOTE_TIMEOUT", `Givro request timed out after ${timeoutMs}ms`, options);
+    this.name = "GivroPayTimeoutError";
     this.timeoutMs = timeoutMs;
   }
 }
 
 /** TX construction failed (bad params, encoding error, etc.). */
-export class HfiPayBuildTxError extends HfiPayError {
+export class GivroPayBuildTxError extends GivroPayError {
   constructor(message: string, options?: ErrorOptions) {
-    super("BUILD_TX_FAILED", `HFI Pay TX build failed: ${message}`, options);
-    this.name = "HfiPayBuildTxError";
+    super("BUILD_TX_FAILED", `Givro TX build failed: ${message}`, options);
+    this.name = "GivroPayBuildTxError";
   }
 }

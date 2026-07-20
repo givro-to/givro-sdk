@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { paymentRefHexToBytes } from "../src/solana/utils.js";
 import { signAndSendSolanaAttestedDeposit, waitForSolanaConfirmation } from "../src/index.js";
-import { HfiPayError } from "../src/errors.js";
+import { GivroPayError } from "../src/errors.js";
 import type { Connection } from "@solana/web3.js";
 
 const VALID_HEX_NO_PREFIX = "ab".repeat(32); // 64 chars
@@ -83,8 +83,8 @@ describe("waitForSolanaConfirmation", () => {
       await waitForSolanaConfirmation(connection, "signature", 50);
       throw new Error("expected confirmation to fail");
     } catch (err) {
-      expect(err).toBeInstanceOf(HfiPayError);
-      expect((err as HfiPayError).code).toBe("NETWORK_ERROR");
+      expect(err).toBeInstanceOf(GivroPayError);
+      expect((err as GivroPayError).code).toBe("NETWORK_ERROR");
     }
   });
 });
@@ -95,8 +95,8 @@ describe("signAndSendSolanaAttestedDeposit", () => {
       await signAndSendSolanaAttestedDeposit({}, {} as Connection, {} as never);
       throw new Error("expected wallet validation to fail");
     } catch (err) {
-      expect(err).toBeInstanceOf(HfiPayError);
-      expect((err as HfiPayError).code).toBe("WALLET_NOT_CONNECTED");
+      expect(err).toBeInstanceOf(GivroPayError);
+      expect((err as GivroPayError).code).toBe("WALLET_NOT_CONNECTED");
     }
   });
 });

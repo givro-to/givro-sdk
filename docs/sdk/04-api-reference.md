@@ -4,7 +4,7 @@
 
 ## Portal 端点
 
-Base URL: `https://hfi.network`
+Base URL: `https://givro.to`
 
 ---
 
@@ -49,7 +49,7 @@ Solidity ABI zero address，调用 TronWeb 前可按所用版本转换为 `41…
   chainId?: number;
 
   // Solana 专有（raw response 在 `order` key 下，SDK 重映射到 solanaOrder）
-  programId?: string;         // HFI Pay 程序 ID（base58）
+  programId?: string;         // Givro 程序 ID（base58）
   solanaOrder?: {
     cancelBefore: string;     // unix 秒（字符串）
     claimBefore: string;
@@ -58,7 +58,7 @@ Solidity ABI zero address，调用 TronWeb 前可按所用版本转换为 `41…
   };
 
   // EVM 专有（attested flow）
-  attestedContract?: string;  // '0x' HFI Pay 合约地址
+  attestedContract?: string;  // '0x' Givro 合约地址
   depositContract?: string;   // attestedContract 的别名
   attestedOrder?: {
     chainId: bigint;
@@ -85,7 +85,7 @@ Solidity ABI zero address，调用 TronWeb 前可按所用版本转换为 `41…
 ```typescript
 import { fetchPublicSupportedAssets } from 'givro-sdk';
 
-const runtime = await fetchPublicSupportedAssets('https://hfi.network');
+const runtime = await fetchPublicSupportedAssets('https://givro.to');
 ```
 
 该响应仅用于 onboarding/build-time discovery。集成方必须独立审核地址并固化到
@@ -182,12 +182,12 @@ function fetchPaymentQuote(
 
 ---
 
-### HfiPayClient
+### GivroPayClient
 
 ```typescript
-import { createHfiPayClient } from 'givro-sdk';
+import { createGivroPayClient } from 'givro-sdk';
 
-const client = createHfiPayClient({
+const client = createGivroPayClient({
   quoteUrl: string;
   portalBaseUrl?: string;      // 默认从 quoteUrl 推导
   fetchImpl?: typeof fetch;
@@ -210,7 +210,7 @@ const client = createHfiPayClient({
 
 ### 资金交易低层构造器
 
-包根不导出接受任意 EVM 结算合约的资金构造器。应用必须通过 `HfiPayClient` 的
+包根不导出接受任意 EVM 结算合约的资金构造器。应用必须通过 `GivroPayClient` 的
 pinned builder 构造 EVM 交易；生命周期辅助函数不受此限制，因为它们不创建新的
 token allowance 或资金存款。
 
@@ -285,7 +285,7 @@ toBaseUnits('100', 18)   // '100000000000000000000'  ETH wei
 
 ```typescript
 // 开发默认值；生产环境必须把独立审核的 Program ID 固化到 trustedSolanaPrograms
-DEFAULT_HFI_PAY_PROGRAM_ID = 'B8sLQ5g6ABbZyyuyx9hia4kFv8nMo4wCqWXcLcR9XpJZ'
+DEFAULT_GIVRO_PAY_PROGRAM_ID = 'B8sLQ5g6ABbZyyuyx9hia4kFv8nMo4wCqWXcLcR9XpJZ'
 
 // Anchor discriminators（sha256("global:<name>").slice(0,8)）
 DEPOSIT_SPL_DISCRIMINATOR    = Uint8Array [224, 0, 198, 175, 198, 47, 105, 204]

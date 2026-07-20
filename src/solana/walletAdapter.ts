@@ -10,7 +10,7 @@
  *   const { connection } = useConnection();
  *
  *   const result = await signAndSendSolanaAttestedDeposit(wallet, connection, {
- *     programId: new PublicKey(DEFAULT_HFI_PAY_PROGRAM_ID),
+ *     programId: new PublicKey(DEFAULT_GIVRO_PAY_PROGRAM_ID),
  *     payer: wallet.publicKey!,
  *     mint: new PublicKey(quote.token),
  *     paymentRef: paymentRefHexToBytes(quote.paymentRef),
@@ -21,7 +21,7 @@
 
 import type { Connection, VersionedTransaction } from "@solana/web3.js";
 import { buildSolanaAttestedDepositTransaction } from "./prepareSolanaDeposit.js";
-import { HfiPayBuildTxError, HfiPayError, HfiPayTimeoutError } from "../errors.js";
+import { GivroPayBuildTxError, GivroPayError, GivroPayTimeoutError } from "../errors.js";
 
 /** Minimal interface satisfied by @solana/wallet-adapter-react WalletContextState. */
 export interface SolanaWalletLike {
@@ -43,22 +43,22 @@ export async function signAndSendSolanaAttestedDeposit(
   params: Parameters<typeof buildSolanaAttestedDepositTransaction>[1],
 ): Promise<SolanaDepositResult> {
   if (!wallet.sendTransaction) {
-    throw new HfiPayError("WALLET_NOT_CONNECTED", "Solana wallet does not support sendTransaction");
+    throw new GivroPayError("WALLET_NOT_CONNECTED", "Solana wallet does not support sendTransaction");
   }
 
   let tx: VersionedTransaction;
   try {
     tx = await buildSolanaAttestedDepositTransaction(connection, params);
   } catch (err) {
-    if (err instanceof HfiPayError) throw err;
-    throw new HfiPayBuildTxError("could not build Solana attested deposit", { cause: err });
+    if (err instanceof GivroPayError) throw err;
+    throw new GivroPayBuildTxError("could not build Solana attested deposit", { cause: err });
   }
   try {
     const signature = await wallet.sendTransaction(tx, connection);
     return { signature };
   } catch (err) {
-    if (err instanceof HfiPayError) throw err;
-    throw new HfiPayError("SIGN_FAILED", "Solana wallet failed to sign or send the deposit", { cause: err });
+    if (err instanceof GivroPayError) throw err;
+    throw new GivroPayError("SIGN_FAILED", "Solana wallet failed to sign or send the deposit", { cause: err });
   }
 }
 
@@ -77,17 +77,16 @@ export async function waitForSolanaConfirmation(
     try {
       status = await connection.getSignatureStatus(signature);
     } catch (err) {
-      throw new HfiPayError("NETWORK_ERROR", "Solana confirmation RPC request failed", { cause: err });
+      throw new GivroPayError("NETWORK_ERROR", "Solana confirmation RPC request failed", { cause: err });
     }
     const value = status?.value;
     if (value?.err) {
-      throw new HfiPayError("TRANSACTION_FAILED", `Solana transaction failed: ${JSON.stringify(value.err)}`);
+      throw new GivroPayError("TRANSACTION_FAILED", `Solana transaction failed: ${JSON.stringify(value.err)}`);
     }
-    const conf = value?.confirmationStatus;
-    if (conf === "confirmed" || conf === "finalized") {
+    if (value && (value.confirmationStatus === "confirmed" || value.confirmationStatus === "finalized")) {
       return { slot: value.slot };
     }
     await new Promise((r) => setTimeout(r, 1500));
   }
-  throw new HfiPayTimeoutError(timeoutMs, { code: "NETWORK_TIMEOUT" });
+  throw new GivroPayTimeoutError(timeoutMs, { code: "NETWORK_TIMEOUT" });
 }

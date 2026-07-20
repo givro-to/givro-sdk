@@ -6,9 +6,9 @@ import {
   buildEvmAttestedDepositRequest,
 } from "../src/evm/prepareEvmDeposit.js";
 import { tronAttestedOrderTupleFromQuote } from "../src/tron/prepareTronAttestedDeposit.js";
-import { HfiPayBuildTxError } from "../src/errors.js";
+import { GivroPayBuildTxError } from "../src/errors.js";
 import { hfipayClaimDigestEvm } from "../src/evm/claimDigest.js";
-import { HFI_PAY_ATTESTED_V1_ABI, ZERO_ADDRESS } from "../src/evm/abi.js";
+import { GIVRO_PAY_ATTESTED_V1_ABI, ZERO_ADDRESS } from "../src/evm/abi.js";
 import { decodeFunctionData, encodeFunctionData, type Address, type Hex } from "viem";
 
 const DEPOSIT_CONTRACT = "0xdEADbeEF00000000000000000000000000000001" as Address;
@@ -94,16 +94,16 @@ describe("buildEvmAttestedDepositRequest", () => {
       refundAfter: 3n,
     };
     expect(() => buildEvmAttestedDepositRequest({ depositContract: ZERO_ADDRESS, order }))
-      .toThrow(HfiPayBuildTxError);
+      .toThrow(GivroPayBuildTxError);
     expect(() => buildEvmAttestedDepositRequest({
       depositContract: "0x1234" as Address,
       order,
-    })).toThrow(HfiPayBuildTxError);
+    })).toThrow(GivroPayBuildTxError);
   });
 });
 
 describe("tronAttestedOrderTupleFromQuote", () => {
-  it("returns the tuple shape and order expected by HfiPayAttestedTron", () => {
+  it("returns the tuple shape and order expected by GivroPayAttestedTron", () => {
     const order = tronAttestedOrderTupleFromQuote({
       paymentRef: PAYMENT_REF,
       amount: AMOUNT.toString(),
@@ -137,11 +137,11 @@ describe("tronAttestedOrderTupleFromQuote", () => {
     expect(order.token).toBe(ZERO_ADDRESS);
 
     const data = encodeFunctionData({
-      abi: HFI_PAY_ATTESTED_V1_ABI,
+      abi: GIVRO_PAY_ATTESTED_V1_ABI,
       functionName: "depositNativeWithOrder",
       args: [order as any, ZERO_ADDRESS],
     });
-    const decoded = decodeFunctionData({ abi: HFI_PAY_ATTESTED_V1_ABI, data });
+    const decoded = decodeFunctionData({ abi: GIVRO_PAY_ATTESTED_V1_ABI, data });
     expect(decoded.functionName).toBe("depositNativeWithOrder");
     expect((decoded.args[0] as { chainId: bigint }).chainId).toBe(728126428n);
     expect((decoded.args[0] as { paymentRef: Hex }).paymentRef).toBe(PAYMENT_REF);
@@ -153,7 +153,7 @@ describe("tronAttestedOrderTupleFromQuote", () => {
       ecosystem: "evm",
       amount: "1",
       token: "0x0000000000000000000000000000000000000000",
-    })).toThrow(HfiPayBuildTxError);
+    })).toThrow(GivroPayBuildTxError);
   });
 });
 

@@ -52,7 +52,7 @@ export interface QuoteRequestBody {
   cancelWindowSec?: number;
 }
 
-/** Response your HFI Pay quote service should return (fields may be nested; see `coercePaymentQuote`). */
+/** Response your Givro quote service should return (fields may be nested; see `coercePaymentQuote`). */
 export interface PaymentQuote {
   paymentRef: `0x${string}`;
   amount: string;
@@ -124,8 +124,8 @@ export interface RetryOptions {
   jitter?: number;
 }
 
-export interface HfiPayClientConfig {
-  /** e.g. `https://hfi.network/api/intent/quote` */
+export interface GivroPayClientConfig {
+  /** e.g. `https://givro.to/api/intent/quote` */
   quoteUrl: string;
   /**
    * Explicit `POST /api/intent/quote` URL (Tron + Send-page shape).
@@ -133,9 +133,9 @@ export interface HfiPayClientConfig {
    */
   intentQuoteUrl?: string;
   /**
-   * Base URL of the HFI Pay portal (without trailing slash).
+   * Base URL of the Givro portal (without trailing slash).
    * Used for Tron intent quote derivation. If omitted, derived from `quoteUrl`.
-   * e.g. `https://hfi.network`
+   * e.g. `https://givro.to`
    */
   portalBaseUrl?: string;
   fetchImpl?: typeof fetch;

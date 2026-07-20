@@ -14,19 +14,6 @@ describe("getNetwork", () => {
     expect(net.defaultQuoteUrl).toContain("localhost");
   });
 
-  it("returns testnet config with Base Sepolia chainId", () => {
-    const net = getNetwork("testnet");
-    expect(net.name).toBe("testnet");
-    expect(net.evmChainId).toBe(84532);
-    expect(net.solanaCluster).toBeUndefined();
-    expect(net.solanaProgramId).toBeUndefined();
-  });
-
-  it("testnet defaultQuoteUrl contains testnet.hfi.network", () => {
-    const net = getNetwork("testnet");
-    expect(net.defaultQuoteUrl).toContain("testnet.hfi.network");
-  });
-
   it("returns the current Base + Tron mainnet-pilot config", () => {
     const net = getNetwork("mainnet");
     expect(net.name).toBe("mainnet");
@@ -36,13 +23,13 @@ describe("getNetwork", () => {
     expect(net.solanaProgramId).toBeUndefined();
   });
 
-  it("mainnet defaultQuoteUrl contains hfi.network", () => {
+  it("mainnet defaultQuoteUrl contains givro.to", () => {
     const net = getNetwork("mainnet");
-    expect(net.defaultQuoteUrl).toContain("hfi.network");
+    expect(net.defaultQuoteUrl).toContain("givro.to");
   });
 
   it("throws on an unknown network name", () => {
-    expect(() => getNetwork("unknown" as NetworkName)).toThrow(/unknown hfi pay network/i);
+    expect(() => getNetwork("unknown" as NetworkName)).toThrow(/unknown givro network/i);
   });
 
   it("does not advertise Solana in the mainnet preset before launch review", () => {
@@ -51,8 +38,8 @@ describe("getNetwork", () => {
   });
 
   it("intentQuoteUrlForPortal strips trailing slash", () => {
-    expect(intentQuoteUrlForPortal("https://testnet.hfi.network/")).toBe(
-      "https://testnet.hfi.network/api/intent/quote",
+    expect(intentQuoteUrlForPortal("https://sandbox.example.com/")).toBe(
+      "https://sandbox.example.com/api/intent/quote",
     );
   });
 });

@@ -1,8 +1,11 @@
-/** Network presets for HFI Pay deployments. */
+/** Network presets for Givro deployments. */
 
-export type NetworkName = "devnet" | "testnet" | "mainnet";
+// Sandbox/test runs against the mainnet portal with a gvr_test_ API key
+// (the key drives simulated settlement); there is no separate testnet portal,
+// so the only network targets are local dev and production.
+export type NetworkName = "devnet" | "mainnet";
 
-export interface HfiPayNetwork {
+export interface GivroPayNetwork {
   name: NetworkName;
   /** EVM chain ID for this deployment */
   evmChainId: number;
@@ -28,7 +31,7 @@ export interface HfiPayNetwork {
   knownTronTokens?: Record<string, string>;
 }
 
-export const NETWORKS: Record<NetworkName, HfiPayNetwork> = {
+export const NETWORKS: Record<NetworkName, GivroPayNetwork> = {
   devnet: {
     name: "devnet",
     evmChainId: 31337,
@@ -42,22 +45,12 @@ export const NETWORKS: Record<NetworkName, HfiPayNetwork> = {
       ETH: "0x0000000000000000000000000000000000000000",
     },
   },
-  testnet: {
-    name: "testnet",
-    evmChainId: 84532, // Base Sepolia
-    portalBaseUrl: "https://testnet.hfi.network",
-    defaultQuoteUrl: "https://testnet.hfi.network/api/intent/quote",
-    knownTokens: {
-      GO: "0x0000000000000000000000000000000000000000",
-      ETH: "0x0000000000000000000000000000000000000000",
-    },
-  },
   mainnet: {
     name: "mainnet",
     evmChainId: 8453,
     tronChainId: 728126428,
-    portalBaseUrl: "https://hfi.network",
-    defaultQuoteUrl: "https://hfi.network/api/intent/quote",
+    portalBaseUrl: "https://givro.to",
+    defaultQuoteUrl: "https://givro.to/api/intent/quote",
     knownTokens: {
       ETH: "0x0000000000000000000000000000000000000000",
       USDC: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
@@ -71,9 +64,9 @@ export const NETWORKS: Record<NetworkName, HfiPayNetwork> = {
 };
 
 /** Return a network config by name, or throw if unknown. */
-export function getNetwork(name: NetworkName): HfiPayNetwork {
+export function getNetwork(name: NetworkName): GivroPayNetwork {
   const n = NETWORKS[name];
-  if (!n) throw new Error(`Unknown HFI Pay network: ${name}`);
+  if (!n) throw new Error(`Unknown Givro network: ${name}`);
   return n;
 }
 

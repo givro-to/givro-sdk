@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { coercePaymentQuote, fetchPaymentQuote, serializeQuoteRequestBody } from "../src/quote.js";
-import { HfiPayError, HfiPayNetworkError, HfiPayQuoteError } from "../src/errors.js";
+import { GivroPayError, GivroPayNetworkError, GivroPayQuoteError } from "../src/errors.js";
 import type { QuoteRequestBody } from "../src/types.js";
 
 const VALID_REF = "0x" + "ab".repeat(32);
@@ -222,28 +222,28 @@ describe("fetchPaymentQuote", () => {
     expect(opts.method).toBe("POST");
   });
 
-  it("throws HfiPayNetworkError on non-2xx response", async () => {
+  it("throws GivroPayNetworkError on non-2xx response", async () => {
     mockFetch.mockResolvedValueOnce(makeResponse(400, "bad request"));
     await expect(
       fetchPaymentQuote("https://example.com/quote", QUOTE_BODY, { fetchImpl: mockFetch }),
-    ).rejects.toBeInstanceOf(HfiPayNetworkError);
+    ).rejects.toBeInstanceOf(GivroPayNetworkError);
   });
 
-  it("HfiPayNetworkError carries statusCode", async () => {
+  it("GivroPayNetworkError carries statusCode", async () => {
     mockFetch.mockResolvedValueOnce(makeResponse(422, "unprocessable"));
     try {
       await fetchPaymentQuote("https://example.com/quote", QUOTE_BODY, { fetchImpl: mockFetch });
     } catch (err) {
-      expect(err).toBeInstanceOf(HfiPayNetworkError);
-      expect((err as HfiPayNetworkError).statusCode).toBe(422);
+      expect(err).toBeInstanceOf(GivroPayNetworkError);
+      expect((err as GivroPayNetworkError).statusCode).toBe(422);
     }
   });
 
-  it("throws HfiPayQuoteError when response JSON is invalid shape", async () => {
+  it("throws GivroPayQuoteError when response JSON is invalid shape", async () => {
     mockFetch.mockResolvedValueOnce(makeResponse(200, { not: "a quote" }));
     await expect(
       fetchPaymentQuote("https://example.com/quote", QUOTE_BODY, { fetchImpl: mockFetch }),
-    ).rejects.toBeInstanceOf(HfiPayQuoteError);
+    ).rejects.toBeInstanceOf(GivroPayQuoteError);
   });
 
   it("wraps network-level failures in a typed quote error", async () => {
@@ -252,8 +252,8 @@ describe("fetchPaymentQuote", () => {
       await fetchPaymentQuote("https://example.com/quote", QUOTE_BODY, { fetchImpl: mockFetch });
       throw new Error("expected fetchPaymentQuote to reject");
     } catch (err) {
-      expect(err).toBeInstanceOf(HfiPayError);
-      expect((err as HfiPayError).code).toBe("QUOTE_FETCH_FAILED");
+      expect(err).toBeInstanceOf(GivroPayError);
+      expect((err as GivroPayError).code).toBe("QUOTE_FETCH_FAILED");
     }
   });
 
@@ -276,7 +276,7 @@ describe("fetchPaymentQuote", () => {
         fetchImpl: mockFetch,
         retry: { maxAttempts: 3, baseDelayMs: 0 },
       }),
-    ).rejects.toBeInstanceOf(HfiPayNetworkError);
+    ).rejects.toBeInstanceOf(GivroPayNetworkError);
     expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 
@@ -287,7 +287,7 @@ describe("fetchPaymentQuote", () => {
         fetchImpl: mockFetch,
         retry: { maxAttempts: 3, baseDelayMs: 0 },
       }),
-    ).rejects.toBeInstanceOf(HfiPayNetworkError);
+    ).rejects.toBeInstanceOf(GivroPayNetworkError);
     expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 
@@ -298,7 +298,7 @@ describe("fetchPaymentQuote", () => {
         fetchImpl: mockFetch,
         retry: { maxAttempts: 3, baseDelayMs: 0 },
       }),
-    ).rejects.toBeInstanceOf(HfiPayNetworkError);
+    ).rejects.toBeInstanceOf(GivroPayNetworkError);
     expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 

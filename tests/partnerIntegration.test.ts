@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  createHfiPayClient,
+  createGivroPayClient,
   toWagmiSendSequence,
 } from "../src/index.js";
 
@@ -33,8 +33,8 @@ describe("consumer browser integration flow", () => {
         refundAfter: "1710604800",
       },
     }));
-    const client = createHfiPayClient({
-      quoteUrl: "https://hfi.network/api/intent/quote",
+    const client = createGivroPayClient({
+      quoteUrl: "https://givro.to/api/intent/quote",
       fetchImpl: mockFetch,
       trustedAttestedContracts: {
         "evm:8453": ["0xdeadbeef00000000000000000000000000000002"],
@@ -57,7 +57,7 @@ describe("consumer browser integration flow", () => {
     const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(String(init.body)) as Record<string, unknown>;
     const headers = new Headers(init.headers);
-    expect(url).toBe("https://hfi.network/api/intent/quote");
+    expect(url).toBe("https://givro.to/api/intent/quote");
     expect(headers.get("X-API-Key")).toBeNull();
     expect(body.identifier).toBe("alicename@gmail.com");
     expect(body.identifierKind).toBe("email");
@@ -92,9 +92,9 @@ describe("consumer browser integration flow", () => {
         refundAfter: "1710604800",
       },
     }));
-    const client = createHfiPayClient({
-      quoteUrl: "https://hfi.network/api/intent/quote",
-      portalBaseUrl: "https://hfi.network/",
+    const client = createGivroPayClient({
+      quoteUrl: "https://givro.to/api/intent/quote",
+      portalBaseUrl: "https://givro.to/",
       fetchImpl: mockFetch,
       defaultHeaders: { "X-X-Session": "sender-x-session" },
       trustedAttestedContracts: {
@@ -117,7 +117,7 @@ describe("consumer browser integration flow", () => {
     const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(String(init.body)) as Record<string, unknown>;
     const headers = new Headers(init.headers);
-    expect(url).toBe("https://hfi.network/api/intent/quote");
+    expect(url).toBe("https://givro.to/api/intent/quote");
     expect(headers.get("X-X-Session")).toBe("sender-x-session");
     expect(headers.get("X-API-Key")).toBeNull();
     expect(body.identifier).toBe("hfi_user");

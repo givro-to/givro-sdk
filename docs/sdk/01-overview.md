@@ -1,10 +1,10 @@
-# HFI Pay — 产品概述
+# Givro — 产品概述
 
 > 当前已验证的真实资金主网试点为 Base + Tron，公开标识符流程为 Email + X handle。本文中的手机号、Solana 与其他 EVM 网络能力描述为 SDK 架构及生产发布目标，不代表对应能力当前已上线。
 
 ## 是什么
 
-HFI Pay 是一套协议 + SDK，让钱包用户可以**直接把 crypto 发到受支持的人类可读标识符**，无需预先知道对方的链上地址；当前公开流程支持 email 和 X handle。
+Givro 是一套协议 + SDK，让钱包用户可以**直接把 crypto 发到受支持的人类可读标识符**，无需预先知道对方的链上地址；当前公开流程支持 email 和 X handle。
 
 发送方体验和普通转账完全一样，唯一的区别是 recipient 字段填的是 `alice@gmail.com` 或 `@alice`，而不是 `7xKX...` 这样的地址。
 
@@ -14,7 +14,7 @@ HFI Pay 是一套协议 + SDK，让钱包用户可以**直接把 crypto 发到�
 
 1. 用户在钱包里选择链、token、填写金额
 2. Recipient 字段填写当前 Portal 启用的标识符（公开流程为 email / X handle）
-3. 钱包调用 HFI Pay SDK 拿报价，构建 deposit 交易
+3. 钱包调用 Givro SDK 拿报价，构建 deposit 交易
 4. 用户签名，交易上链
 5. 完成 ✅
 
@@ -22,8 +22,8 @@ HFI Pay 是一套协议 + SDK，让钱包用户可以**直接把 crypto 发到�
 
 ### 接收方
 
-1. 收到 HFI Pay 邮件通知或 X DM
-2. 点击链接，跳转到 `hfi.network/claim`（或钱包 app 内嵌页面）
+1. 收到 Givro 邮件通知或 X DM
+2. 点击链接，跳转到 `givro.to/claim`（或钱包 app 内嵌页面）
 3. 完成身份验证（邮件 OTP / X OAuth）
 4. 连接任意钱包（Phantom、MetaMask 等）签名 claim
 5. 收到 crypto ✅
@@ -34,7 +34,7 @@ HFI Pay 是一套协议 + SDK，让钱包用户可以**直接把 crypto 发到�
 ## 技术架构总览
 
 ```
-发送方钱包                    HFI Pay Portal                   接收方
+发送方钱包                    Givro Portal                   接收方
 ────────────                 ──────────────                  ──────────
 fetchPaymentQuote()  ──────> 生成 paymentRef + idHash         
                              （HMAC，Portal 持有密钥）         

@@ -1,4 +1,4 @@
-# HFI Pay SDK 文档
+# Givro SDK 文档
 
 > 当前已验证的真实资金主网试点为 Base + Tron，公开标识符流程为 Email + X handle。手机号、Solana 以及其他主流 EVM 网络属于生产发布目标，只有在对应流程完成发布审核后才可启用。
 
@@ -14,7 +14,7 @@
 
 ## 快速导航
 
-**我是钱包厂商，想支持 HFI Pay 发送** → [02-wallet-integration.md](./02-wallet-integration.md)
+**我是钱包厂商，想支持 Givro 发送** → [02-wallet-integration.md](./02-wallet-integration.md)
 
 **我想了解接收方如何 claim** → [03-claim-flow.md](./03-claim-flow.md)
 
