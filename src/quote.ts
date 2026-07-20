@@ -1,8 +1,65 @@
 import type { ChainVm, PaymentQuote, QuoteRequestBody, RetryOptions } from "./types.js";
-import { HfiPayNetworkError, HfiPayQuoteError, HfiPayTimeoutError } from "./errors.js";
+import { HfiPayError, HfiPayNetworkError, HfiPayQuoteError, HfiPayTimeoutError } from "./errors.js";
+
+const EVM_NATIVE_TOKEN = "0x0000000000000000000000000000000000000000";
+const SOLANA_NATIVE_TOKEN = "native";
+const EVM_NATIVE_SYMBOLS_BY_CHAIN: Readonly<Record<number, ReadonlySet<string>>> = {
+  1: new Set(["ETH"]),
+  10: new Set(["ETH"]),
+  56: new Set(["BNB"]),
+  97: new Set(["BNB"]),
+  137: new Set(["POL"]),
+  31337: new Set(["ETH", "GO"]),
+  8453: new Set(["ETH"]),
+  84532: new Set(["ETH", "GO"]),
+  42161: new Set(["ETH"]),
+  421614: new Set(["ETH"]),
+  43113: new Set(["AVAX"]),
+  43114: new Set(["AVAX"]),
+  11155111: new Set(["ETH"]),
+  11155420: new Set(["ETH"]),
+};
+const EVM_NATIVE_SYMBOLS = new Set(
+  Object.values(EVM_NATIVE_SYMBOLS_BY_CHAIN).flatMap((symbols) => [...symbols]),
+);
+
+/** Canonicalize only explicit native aliases; token symbols otherwise remain untouched. */
+export function canonicalQuoteToken(vm: ChainVm, token: string, chainId?: number): string {
+  const trimmed = token.trim();
+  const alias = trimmed.toUpperCase();
+  if (vm === "evm") {
+    if (
+      alias === "NATIVE"
+      || trimmed.toLowerCase() === EVM_NATIVE_TOKEN
+      || /^0x[eE]{40}$/.test(trimmed)
+    ) {
+      return EVM_NATIVE_TOKEN;
+    }
+    if (EVM_NATIVE_SYMBOLS.has(alias)) {
+      if (chainId == null || !Number.isSafeInteger(chainId) || chainId <= 0) {
+        throw new HfiPayQuoteError(`chainId is required to resolve EVM native symbol ${alias}`);
+      }
+      if (!EVM_NATIVE_SYMBOLS_BY_CHAIN[chainId]?.has(alias)) {
+        throw new HfiPayQuoteError(
+          `${alias} is not the native asset for EVM chain ${chainId}; use a reviewed token address`,
+        );
+      }
+      return EVM_NATIVE_TOKEN;
+    }
+  }
+  if (vm === "tron" && (alias === "TRX" || alias === "NATIVE" || trimmed === EVM_NATIVE_TOKEN)) return "native";
+  if (vm === "solana" && (alias === "SOL" || alias === "NATIVE" || trimmed === "11111111111111111111111111111111")) {
+    return SOLANA_NATIVE_TOKEN;
+  }
+  return trimmed;
+}
 
 function quoteVm(body: QuoteRequestBody): ChainVm {
-  return (body.vm ?? body.ecosystem) as ChainVm;
+  const vm = body.vm ?? body.ecosystem;
+  if (vm !== "evm" && vm !== "tron" && vm !== "solana") {
+    throw new HfiPayQuoteError("vm (or ecosystem) must be evm | solana | tron");
+  }
+  return vm;
 }
 
 /**
@@ -10,6 +67,7 @@ function quoteVm(body: QuoteRequestBody): ChainVm {
  */
 export function serializeQuoteRequestBody(body: QuoteRequestBody): Record<string, unknown> {
   const vm = quoteVm(body);
+  const token = canonicalQuoteToken(vm, body.token, body.chainId);
   if (vm === "tron") {
     const amountHuman = body.amount ?? body.amountWei;
     const out: Record<string, unknown> = {
@@ -17,7 +75,7 @@ export function serializeQuoteRequestBody(body: QuoteRequestBody): Record<string
       identifierKind: body.identifierKind,
       amount: amountHuman,
       amountWei: body.amountWei,
-      token: body.token,
+      token,
       chainId: body.chainId,
       ecosystem: "tron",
       turnstile: body.turnstile ?? "",
@@ -28,7 +86,7 @@ export function serializeQuoteRequestBody(body: QuoteRequestBody): Record<string
     if (body.senderWalletEcosystem !== undefined) out.senderWalletEcosystem = body.senderWalletEcosystem;
     return out;
   }
-  return { ...body } as Record<string, unknown>;
+  return { ...body, token } as Record<string, unknown>;
 }
 
 function isHex32(h: string): h is `0x${string}` {
@@ -38,16 +96,24 @@ function isHex32(h: string): h is `0x${string}` {
 
 function normalizeHex32(value: unknown, fieldName: string): `0x${string}` {
   if (typeof value !== "string" || !isHex32(value)) {
-    throw new Error(`quote: invalid ${fieldName} (expected 32-byte hex)`);
+    throw new HfiPayQuoteError(`invalid ${fieldName} (expected 32-byte hex)`);
   }
   return (value.startsWith("0x") ? value : `0x${value}`) as `0x${string}`;
+}
+
+function parseQuoteBigInt(value: unknown, fieldName: string): bigint {
+  try {
+    return BigInt(String(value));
+  } catch (err) {
+    throw new HfiPayQuoteError(`invalid ${fieldName} (expected integer)`, { cause: err });
+  }
 }
 
 /** Normalize various JSON shapes into `PaymentQuote`. */
 export function coercePaymentQuote(raw: Record<string, unknown>): PaymentQuote {
   const paymentRef = (raw.paymentRef ?? raw.payment_ref) as string | undefined;
   if (!paymentRef || !isHex32(paymentRef)) {
-    throw new Error("quote: missing or invalid paymentRef (32-byte hex)");
+    throw new HfiPayQuoteError("missing or invalid paymentRef (32-byte hex)");
   }
   const ref = (paymentRef.startsWith("0x") ? paymentRef : `0x${paymentRef}`) as `0x${string}`;
   // Support nested order object (HFI portal response shape)
@@ -55,14 +121,19 @@ export function coercePaymentQuote(raw: Record<string, unknown>): PaymentQuote {
   // Prefer atomic-unit fields. `raw.amount` can be a human-readable display
   // label on intent quote endpoints and must never override the signed order.
   const amount = String(raw.amountWei ?? order.amountWei ?? order.amount ?? raw.amount ?? "");
-  if (!amount) throw new Error("quote: missing amount");
-  const token = String(raw.token ?? order.token ?? "");
-  if (!token) throw new Error("quote: missing token");
+  if (!amount) throw new HfiPayQuoteError("missing amount");
   const ecosystem = (raw.ecosystem ?? order.ecosystem) as string;
   if (ecosystem !== "evm" && ecosystem !== "solana" && ecosystem !== "tron") {
-    throw new Error("quote: ecosystem must be evm | solana | tron");
+    throw new HfiPayQuoteError("ecosystem must be evm | solana | tron");
   }
-  const chainId = (raw.chainId ?? order.chainId) != null ? Number(raw.chainId ?? order.chainId) : undefined;
+  const chainIdRaw = raw.chainId ?? order.chainId;
+  const chainId = chainIdRaw != null ? Number(chainIdRaw) : undefined;
+  if (chainId !== undefined && (!Number.isSafeInteger(chainId) || chainId <= 0)) {
+    throw new HfiPayQuoteError("chainId must be a positive integer");
+  }
+  const rawToken = String(raw.token ?? order.token ?? "");
+  if (!rawToken) throw new HfiPayQuoteError("missing token");
+  const token = canonicalQuoteToken(ecosystem, rawToken, chainId);
   const dep = raw.depositContract ?? raw.deposit_contract ?? raw.attestedContract;
   const depositContract =
     typeof dep === "string" && dep.startsWith("0x") ? (dep as `0x${string}`) : undefined;
@@ -80,27 +151,29 @@ export function coercePaymentQuote(raw: Record<string, unknown>): PaymentQuote {
       || order.claimBefore == null
       || order.refundAfter == null
     ) {
-      throw new Error("quote: attestedOrder missing required fields");
+      throw new HfiPayQuoteError("attestedOrder missing required fields");
     }
     const orderPaymentRef = normalizeHex32(
       order.paymentRef ?? raw.paymentRef ?? raw.payment_ref,
       "paymentRef",
     );
     const orderIdHash = normalizeHex32(order.idHash, "order.idHash");
-    const claimBefore = BigInt(String(order.claimBefore));
+    const claimBefore = parseQuoteBigInt(order.claimBefore, "order.claimBefore");
     const orderAmountRaw = order.amount ?? order.amountWei;
     if (orderAmountRaw == null) {
-      throw new Error("quote: attestedOrder missing amount (or amountWei)");
+      throw new HfiPayQuoteError("attestedOrder missing amount (or amountWei)");
     }
     attestedOrder = {
-      chainId: BigInt(String(order.chainId)),
+      chainId: parseQuoteBigInt(order.chainId, "order.chainId"),
       paymentRef: orderPaymentRef,
       idHash: orderIdHash,
-      token: String(order.token),
-      amount: BigInt(String(orderAmountRaw)),
-      cancelBefore: order.cancelBefore != null ? BigInt(String(order.cancelBefore)) : claimBefore,
+      token: canonicalQuoteToken(ecosystem, String(order.token), chainId),
+      amount: parseQuoteBigInt(orderAmountRaw, "order.amount"),
+      cancelBefore: order.cancelBefore != null
+        ? parseQuoteBigInt(order.cancelBefore, "order.cancelBefore")
+        : claimBefore,
       claimBefore,
-      refundAfter: BigInt(String(order.refundAfter)),
+      refundAfter: parseQuoteBigInt(order.refundAfter, "order.refundAfter"),
     };
   }
   const programId = typeof raw.programId === "string" ? raw.programId : undefined;
@@ -136,17 +209,19 @@ async function fetchOnce(
   init: { fetchImpl?: typeof fetch; headers?: HeadersInit; timeoutMs?: number },
 ): Promise<PaymentQuote> {
   const fetchFn = init.fetchImpl ?? globalThis.fetch;
-  if (!fetchFn) throw new Error("fetch is not available; pass fetchImpl");
+  if (!fetchFn) throw new HfiPayError("QUOTE_FETCH_FAILED", "fetch is not available; pass fetchImpl");
 
   const timeoutMs = init.timeoutMs ?? 10_000;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const headers = new Headers(init.headers);
+  if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json");
 
   let res: Response;
   try {
     res = await fetchFn(quoteUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...init.headers },
+      headers,
       body: JSON.stringify(serializeQuoteRequestBody(body)),
       signal: controller.signal,
     });
@@ -154,7 +229,8 @@ async function fetchOnce(
     if ((err as { name?: string }).name === "AbortError") {
       throw new HfiPayTimeoutError(timeoutMs, { cause: err });
     }
-    throw err;
+    if (err instanceof HfiPayError) throw err;
+    throw new HfiPayError("QUOTE_FETCH_FAILED", "HFI Pay quote request failed", { cause: err });
   } finally {
     clearTimeout(timer);
   }
@@ -177,7 +253,13 @@ export async function fetchPaymentQuote(
   body: QuoteRequestBody,
   init?: { fetchImpl?: typeof fetch; headers?: HeadersInit; timeoutMs?: number; retry?: RetryOptions },
 ): Promise<PaymentQuote> {
-  const maxAttempts = init?.retry?.maxAttempts ?? 1;
+  // Turnstile tokens are single-use. Never replay the same browser challenge
+  // during an automatic HTTP retry; the caller must acquire a fresh token.
+  const rawMaxAttempts = init?.retry?.maxAttempts ?? 1;
+  const requestedMaxAttempts = Number.isFinite(rawMaxAttempts)
+    ? Math.max(1, Math.floor(rawMaxAttempts))
+    : 1;
+  const maxAttempts = body.turnstile !== undefined ? 1 : requestedMaxAttempts;
   const baseDelayMs = init?.retry?.baseDelayMs ?? 300;
   const jitter = init?.retry?.jitter ?? 0.2;
 

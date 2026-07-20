@@ -13,8 +13,8 @@ function okJson(json: Record<string, unknown>): Response {
   } as unknown as Response;
 }
 
-describe("partner integration flow", () => {
-  it("fetches an EVM partner quote and prepares the wagmi ERC-20 send sequence", async () => {
+describe("consumer browser integration flow", () => {
+  it("fetches an EVM browser quote with Turnstile and prepares the wagmi ERC-20 send sequence", async () => {
     const mockFetch = vi.fn().mockResolvedValue(okJson({
       paymentRef: "0x" + "ab".repeat(32),
       ecosystem: "evm",
@@ -34,9 +34,8 @@ describe("partner integration flow", () => {
       },
     }));
     const client = createHfiPayClient({
-      quoteUrl: "https://partner.hfi.network/api/intent/quote",
+      quoteUrl: "https://hfi.network/api/intent/quote",
       fetchImpl: mockFetch,
-      defaultHeaders: { "X-API-Key": "partner_test_key" },
       trustedAttestedContracts: {
         "evm:8453": ["0xdeadbeef00000000000000000000000000000002"],
       },
@@ -44,26 +43,28 @@ describe("partner integration flow", () => {
 
     const quote = await client.quoteSend({
       recipientKind: "email",
-      recipient: " Alice+Partner@Example.COM ",
+      recipient: " Alice.Name+Partner@Gmail.COM ",
       amount: "2500000",
+      amountHuman: "2.5",
       token: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
       vm: "evm",
       chainId: 8453,
-      senderWalletAddr: "0x1111111111111111111111111111111111111111",
-      senderWalletEcosystem: "evm",
+      turnstile: "fresh-turnstile-token",
     });
     const txs = client.prepareEvmTransactions({ quote });
     const wagmiSteps = toWagmiSendSequence(txs);
 
     const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(String(init.body)) as Record<string, unknown>;
-    expect(url).toBe("https://partner.hfi.network/api/intent/quote");
-    expect((init.headers as Record<string, string>)["X-API-Key"]).toBe("partner_test_key");
-    expect(body.identifier).toBe("alice@example.com");
+    const headers = new Headers(init.headers);
+    expect(url).toBe("https://hfi.network/api/intent/quote");
+    expect(headers.get("X-API-Key")).toBeNull();
+    expect(body.identifier).toBe("alicename@gmail.com");
     expect(body.identifierKind).toBe("email");
     expect(body.amountWei).toBe("2500000");
+    expect(body.amount).toBe("2.5");
+    expect(body.turnstile).toBe("fresh-turnstile-token");
     expect(body.ecosystem).toBe("evm");
-    expect(body.senderWalletAddr).toBe("0x1111111111111111111111111111111111111111");
 
     expect(wagmiSteps).toHaveLength(2);
     expect(wagmiSteps[0].to.toLowerCase()).toBe("0x833589fcd6edb6e08f4c7c32d4f71b54bda02913");
@@ -72,7 +73,7 @@ describe("partner integration flow", () => {
     expect(wagmiSteps[1].value).toBe(0n);
   });
 
-  it("fetches a Tron partner quote through the intent endpoint and prepares the TronWeb order tuple", async () => {
+  it("fetches a Tron X-recipient browser quote with Turnstile and an X session", async () => {
     const mockFetch = vi.fn().mockResolvedValue(okJson({
       paymentRef: "0x" + "ef".repeat(32),
       ecosystem: "tron",
@@ -92,10 +93,10 @@ describe("partner integration flow", () => {
       },
     }));
     const client = createHfiPayClient({
-      quoteUrl: "https://partner.hfi.network/api/intent/quote",
-      portalBaseUrl: "https://partner.hfi.network/",
+      quoteUrl: "https://hfi.network/api/intent/quote",
+      portalBaseUrl: "https://hfi.network/",
       fetchImpl: mockFetch,
-      defaultHeaders: { "X-API-Key": "partner_test_key" },
+      defaultHeaders: { "X-X-Session": "sender-x-session" },
       trustedAttestedContracts: {
         "tron:728126428": ["0x00000000000000000000000000000000000000aa"],
       },
@@ -109,21 +110,22 @@ describe("partner integration flow", () => {
       token: "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
       vm: "tron",
       chainId: 728126428,
-      senderWalletAddr: "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf",
-      senderWalletEcosystem: "tron",
+      turnstile: "fresh-turnstile-token",
     });
     const tuple = client.tronAttestedOrderTuple(quote);
 
     const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(String(init.body)) as Record<string, unknown>;
-    expect(url).toBe("https://partner.hfi.network/api/intent/quote");
-    expect((init.headers as Record<string, string>)["X-API-Key"]).toBe("partner_test_key");
+    const headers = new Headers(init.headers);
+    expect(url).toBe("https://hfi.network/api/intent/quote");
+    expect(headers.get("X-X-Session")).toBe("sender-x-session");
+    expect(headers.get("X-API-Key")).toBeNull();
     expect(body.identifier).toBe("hfi_user");
     expect(body.identifierKind).toBe("x");
     expect(body.amount).toBe("12.5");
     expect(body.amountWei).toBe("12500000");
+    expect(body.turnstile).toBe("fresh-turnstile-token");
     expect(body.ecosystem).toBe("tron");
-    expect(body.senderWalletEcosystem).toBe("tron");
 
     expect(tuple.paymentRef).toBe("0x" + "ef".repeat(32));
     expect(tuple.idHash).toBe("0x" + "12".repeat(32));

@@ -25,11 +25,6 @@
     "@solana/web3.js": "^1.95.0",
     "viem": "^2.0.0"
   },
-  "peerDependenciesMeta": {
-    "@solana/spl-token": { "optional": true },
-    "@solana/web3.js": { "optional": true },
-    "viem": { "optional": true }
-  },
   "devDependencies": {
     "@solana/spl-token": "^0.4.9",
     "@solana/web3.js": "^1.95.8",

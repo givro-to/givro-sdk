@@ -1,8 +1,9 @@
 import type { Connection } from "@solana/web3.js";
 import { PublicKey } from "@solana/web3.js";
 import type { Address } from "viem";
+import { HfiPayBuildTxError, HfiPayQuoteError } from "./errors.js";
 import { normalizeRecipient, type RecipientKind } from "./identifier.js";
-import { fetchPaymentQuote } from "./quote.js";
+import { canonicalQuoteToken, fetchPaymentQuote } from "./quote.js";
 import { paymentRefHexToBytes } from "./solana/utils.js";
 import {
   buildSolanaAttestedDepositTransaction,
@@ -29,46 +30,46 @@ function derivePortalBaseUrl(config: HfiPayClientConfig): string {
 export class HfiPayClient {
   constructor(private readonly config: HfiPayClientConfig) {}
 
-  private tokensEqual(vm: ChainVm, left: string, right: string): boolean {
-    return vm === "evm" ? left.toLowerCase() === right.toLowerCase() : left === right;
+  private tokensEqual(vm: ChainVm, left: string, right: string, chainId?: number): boolean {
+    const canonicalLeft = canonicalQuoteToken(vm, left, chainId);
+    const canonicalRight = canonicalQuoteToken(vm, right, chainId);
+    return vm === "evm"
+      ? canonicalLeft.toLowerCase() === canonicalRight.toLowerCase()
+      : canonicalLeft === canonicalRight;
   }
 
-  private requestTokenMatches(vm: ChainVm, requested: string, actual: string): boolean {
-    if (this.tokensEqual(vm, requested, actual)) return true;
-    const symbol = requested.toUpperCase();
-    if (vm === "evm" && ["NATIVE", "ETH", "GO", "POL", "BNB", "AVAX"].includes(symbol)) {
-      return isNativeEvmToken(actual as Address);
-    }
-    if (vm === "tron" && ["NATIVE", "TRX"].includes(symbol)) {
-      return actual === "native" || actual === "0x0000000000000000000000000000000000000000";
-    }
-    if (vm === "solana" && ["NATIVE", "SOL"].includes(symbol)) {
-      return actual === PublicKey.default.toBase58();
-    }
-    return false;
+  private requestTokenMatches(vm: ChainVm, requested: string, actual: string, chainId?: number): boolean {
+    return this.tokensEqual(vm, requested, actual, chainId);
   }
 
   private assertTrustedAttestedContract(q: PaymentQuote): void {
     if (!q.attestedContract || q.chainId == null) {
-      throw new Error("attested quote missing attestedContract/chainId");
+      throw new HfiPayQuoteError("missing attestedContract/chainId");
     }
     const key = `${q.ecosystem}:${q.chainId}`;
     const trusted = this.config.trustedAttestedContracts?.[key] ?? [];
-    const matches = trusted.some((address) =>
-      q.ecosystem === "evm"
-        ? address.toLowerCase() === q.attestedContract!.toLowerCase()
-        : address === q.attestedContract,
+    const quoted = q.attestedContract;
+    const isCanonicalNonZeroHexAddress = (address: string) => (
+      /^0x[0-9a-fA-F]{40}$/.test(address)
+      && !/^0x0{40}$/i.test(address)
     );
+    if (!isCanonicalNonZeroHexAddress(quoted)) {
+      throw new HfiPayQuoteError(`attested contract is not a canonical non-zero address for ${key}`);
+    }
+    const matches = trusted.some((address) => (
+      isCanonicalNonZeroHexAddress(address)
+      && address.toLowerCase() === quoted.toLowerCase()
+    ));
     if (!matches) {
-      throw new Error(`attested quote contract is not trusted for ${key}`);
+      throw new HfiPayQuoteError(`attested contract is not trusted for ${key}`);
     }
   }
 
   private assertTrustedSolanaProgram(q: PaymentQuote, cluster: string): string {
-    if (!q.programId) throw new Error("Solana quote missing programId");
+    if (!q.programId) throw new HfiPayQuoteError("Solana quote missing programId");
     const trusted = this.config.trustedSolanaPrograms?.[cluster] ?? [];
     if (!trusted.includes(q.programId)) {
-      throw new Error(`Solana quote program is not trusted for ${cluster}`);
+      throw new HfiPayQuoteError(`Solana program is not trusted for ${cluster}`);
     }
     return q.programId;
   }
@@ -77,17 +78,17 @@ export class HfiPayClient {
     programId: string;
     solanaOrder: NonNullable<PaymentQuote["solanaOrder"]>;
   } {
-    if (!q.solanaOrder || !q.programId) throw new Error("Solana quote missing programId/solanaOrder");
-    if (!/^0x[0-9a-fA-F]{64}$/.test(q.solanaOrder.idHash)) throw new Error("Solana quote has invalid idHash");
-    if (!/^\d+$/.test(q.amount) || BigInt(q.amount) <= 0n) throw new Error("Solana quote has invalid amount");
+    if (!q.solanaOrder || !q.programId) throw new HfiPayQuoteError("Solana quote missing programId/solanaOrder");
+    if (!/^0x[0-9a-fA-F]{64}$/.test(q.solanaOrder.idHash)) throw new HfiPayQuoteError("Solana quote has invalid idHash");
+    if (!/^\d+$/.test(q.amount) || BigInt(q.amount) <= 0n) throw new HfiPayQuoteError("Solana quote has invalid amount");
     if (![q.solanaOrder.cancelBefore, q.solanaOrder.claimBefore, q.solanaOrder.refundAfter].every((value) => /^\d+$/.test(value))) {
-      throw new Error("Solana quote has invalid lifecycle windows");
+      throw new HfiPayQuoteError("Solana quote has invalid lifecycle windows");
     }
     const cancelBefore = BigInt(q.solanaOrder.cancelBefore);
     const claimBefore = BigInt(q.solanaOrder.claimBefore);
     const refundAfter = BigInt(q.solanaOrder.refundAfter);
     if (!(cancelBefore <= claimBefore && claimBefore < refundAfter)) {
-      throw new Error("Solana quote has invalid lifecycle windows");
+      throw new HfiPayQuoteError("Solana quote has invalid lifecycle windows");
     }
   }
 
@@ -96,42 +97,42 @@ export class HfiPayClient {
     attestedOrder: NonNullable<PaymentQuote["attestedOrder"]>;
   } {
     if (!q.attestedContract || !q.attestedOrder) {
-      throw new Error("attested quote missing attestedContract/attestedOrder");
+      throw new HfiPayQuoteError("missing attestedContract/attestedOrder");
     }
     const o = q.attestedOrder;
     if (!o.paymentRef || !o.idHash || !o.token) {
-      throw new Error("attested quote missing order.paymentRef/idHash/token");
+      throw new HfiPayQuoteError("attested quote missing order.paymentRef/idHash/token");
     }
-    if (!this.tokensEqual(q.ecosystem, q.token, o.token)) {
-      throw new Error("attested quote token mismatch: quote.token must match order.token");
+    if (!this.tokensEqual(q.ecosystem, q.token, o.token, q.chainId)) {
+      throw new HfiPayQuoteError("attested quote token mismatch: quote.token must match order.token");
     }
     if (q.paymentRef.toLowerCase() !== o.paymentRef.toLowerCase()) {
-      throw new Error("attested quote paymentRef mismatch");
+      throw new HfiPayQuoteError("attested quote paymentRef mismatch");
     }
     if (q.chainId == null || BigInt(q.chainId) !== o.chainId) {
-      throw new Error("attested quote chainId mismatch");
+      throw new HfiPayQuoteError("attested quote chainId mismatch");
     }
     if (!/^\d+$/.test(q.amount) || BigInt(q.amount) !== o.amount) {
-      throw new Error("attested quote amount mismatch");
+      throw new HfiPayQuoteError("attested quote amount mismatch");
     }
     if (!(o.cancelBefore <= o.claimBefore && o.claimBefore < o.refundAfter)) {
-      throw new Error("attested quote has invalid lifecycle windows");
+      throw new HfiPayQuoteError("attested quote has invalid lifecycle windows");
     }
   }
 
   private assertQuoteMatchesRequest(q: PaymentQuote, request: QuoteRequestBody): void {
     const vm = (request.vm ?? request.ecosystem) as ChainVm | undefined;
-    if (!vm || q.ecosystem !== vm) throw new Error("quote ecosystem does not match request");
+    if (!vm || q.ecosystem !== vm) throw new HfiPayQuoteError("ecosystem does not match request");
     if (request.chainId != null && q.chainId !== request.chainId) {
-      throw new Error("quote chainId does not match request");
+      throw new HfiPayQuoteError("chainId does not match request");
     }
     const actualToken = q.attestedOrder?.token ?? q.token;
-    if (!this.requestTokenMatches(vm, request.token, actualToken)) {
-      throw new Error("quote token does not match request");
+    if (!this.requestTokenMatches(vm, request.token, actualToken, q.chainId ?? request.chainId)) {
+      throw new HfiPayQuoteError("token does not match request");
     }
     const actualAmount = q.attestedOrder?.amount.toString() ?? q.amount;
     if (actualAmount !== request.amountWei) {
-      throw new Error("quote amount does not match request");
+      throw new HfiPayQuoteError("amount does not match request");
     }
     if (q.attestedOrder) this.assertAttestedOrderComplete(q);
   }
@@ -143,6 +144,8 @@ export class HfiPayClient {
       ecosystem: (body.vm ?? body.ecosystem) as ChainVm,
     };
     const vm = normalized.vm ?? normalized.ecosystem;
+    if (!vm) throw new HfiPayQuoteError("fetchQuote: vm (or ecosystem) is required");
+    normalized.token = canonicalQuoteToken(vm, normalized.token, normalized.chainId);
     let quoteUrl = this.config.quoteUrl;
     if (vm === "tron") {
       if (this.config.intentQuoteUrl) {
@@ -150,7 +153,7 @@ export class HfiPayClient {
       } else {
         const base = derivePortalBaseUrl(this.config);
         if (!base) {
-          throw new Error(
+          throw new HfiPayQuoteError(
             "fetchQuote(tron): set portalBaseUrl or intentQuoteUrl in HfiPayClientConfig",
           );
         }
@@ -172,12 +175,13 @@ export class HfiPayClient {
    *
    * @param params.vm         Target chain VM: "evm" | "solana" | "tron".
    *                          Alias: `ecosystem` (deprecated, same effect).
-   * @param params.chainId    EVM chain ID or Tron chain id, e.g. 31337 or 1.
+   * @param params.chainId    EVM or Tron chain ID.
    * @param params.token      Token contract/mint address, or a native symbol such as ETH/TRX/SOL.
    * @param params.amount     Smallest-unit amount as a decimal string (wei / raw).
    *                          Use `toBaseUnits(humanAmount, decimals)` to convert first.
    * @param params.amountHuman Optional human amount for `POST /api/intent/quote` (Tron / Send page). Defaults to `amount`.
-   * @param params.turnstile  Cloudflare token for browser quotes; omit for partner `X-API-Key` requests.
+   * @param params.turnstile  Fresh Cloudflare Turnstile token for consumer browser quotes.
+   *                          Production consumer quote endpoints reject API-key authentication.
    * @param params.recipient  Recipient address in `recipientKind` format.
    * @param params.recipientKind "email" | "phone" | "x"
    */
@@ -195,12 +199,13 @@ export class HfiPayClient {
     /** Human-readable amount label for intent quote (e.g. Tron). */
     amountHuman?: string;
     turnstile?: string;
+    /** @deprecated Current Portal derives the X sender from `X-X-Session`. */
     senderXUid?: string;
     senderWalletAddr?: string;
     senderWalletEcosystem?: "evm" | "solana" | "tron";
   }): Promise<PaymentQuote> {
     const vm = (params.vm ?? params.ecosystem) as ChainVm | undefined;
-    if (!vm) throw new Error("quoteSend: vm (or ecosystem) is required");
+    if (!vm) throw new HfiPayQuoteError("quoteSend: vm (or ecosystem) is required");
     const identifier = normalizeRecipient(params.recipientKind, params.recipient);
     return this.fetchQuote({
       identifier,
@@ -241,7 +246,7 @@ export class HfiPayClient {
     originRelayAddress?: Address;
   }): { approve: ReturnType<typeof buildEvmApproveRequest> | null; deposit: ReturnType<typeof buildEvmAttestedDepositRequest> } {
     const q = params.quote;
-    if (q.ecosystem !== "evm") throw new Error("quote ecosystem must be evm");
+    if (q.ecosystem !== "evm") throw new HfiPayBuildTxError("quote ecosystem must be evm");
     const isAttested = Boolean(q.attestedContract && q.attestedOrder);
 
     if (isAttested) {
@@ -266,7 +271,7 @@ export class HfiPayClient {
       return { approve, deposit };
     }
 
-    throw new Error("attested EVM quote required: quote must include attestedContract and attestedOrder");
+    throw new HfiPayBuildTxError("attested EVM quote required: quote must include attestedContract and attestedOrder");
   }
 
   /**
@@ -286,7 +291,7 @@ export class HfiPayClient {
     },
   ): Promise<import("@solana/web3.js").VersionedTransaction> {
     const q = params.quote;
-    if (q.ecosystem !== "solana") throw new Error("quote ecosystem must be solana");
+    if (q.ecosystem !== "solana") throw new HfiPayBuildTxError("quote ecosystem must be solana");
 
     this.assertSolanaOrderComplete(q);
     const programId = new PublicKey(this.assertTrustedSolanaProgram(q, params.cluster));
@@ -301,7 +306,7 @@ export class HfiPayClient {
       order: {
         paymentRef: paymentRefHexToBytes(q.paymentRef),
         idHash: paymentRefHexToBytes(q.solanaOrder.idHash),
-        mint: new PublicKey(q.token),
+        mint: q.token === "native" ? PublicKey.default : new PublicKey(q.token),
         amount: BigInt(q.amount),
         cancelBefore: BigInt(q.solanaOrder.cancelBefore),
         claimBefore: BigInt(q.solanaOrder.claimBefore),

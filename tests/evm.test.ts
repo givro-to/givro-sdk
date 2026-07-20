@@ -6,6 +6,7 @@ import {
   buildEvmAttestedDepositRequest,
 } from "../src/evm/prepareEvmDeposit.js";
 import { tronAttestedOrderTupleFromQuote } from "../src/tron/prepareTronAttestedDeposit.js";
+import { HfiPayBuildTxError } from "../src/errors.js";
 import { hfipayClaimDigestEvm } from "../src/evm/claimDigest.js";
 import { HFI_PAY_ATTESTED_V1_ABI, ZERO_ADDRESS } from "../src/evm/abi.js";
 import { decodeFunctionData, encodeFunctionData, type Address, type Hex } from "viem";
@@ -80,6 +81,25 @@ describe("buildEvmAttestedDepositRequest", () => {
     expect(req.value).toBe(AMOUNT);
     expect(req.data.slice(0, 10)).toBe("0x5476871e");
   });
+
+  it("rejects zero and non-canonical settlement contract addresses", () => {
+    const order = {
+      chainId: 8453n,
+      paymentRef: PAYMENT_REF,
+      idHash: ("0x" + "cd".repeat(32)) as Hex,
+      token: ZERO_ADDRESS,
+      amount: AMOUNT,
+      cancelBefore: 1n,
+      claimBefore: 2n,
+      refundAfter: 3n,
+    };
+    expect(() => buildEvmAttestedDepositRequest({ depositContract: ZERO_ADDRESS, order }))
+      .toThrow(HfiPayBuildTxError);
+    expect(() => buildEvmAttestedDepositRequest({
+      depositContract: "0x1234" as Address,
+      order,
+    })).toThrow(HfiPayBuildTxError);
+  });
 });
 
 describe("tronAttestedOrderTupleFromQuote", () => {
@@ -87,7 +107,7 @@ describe("tronAttestedOrderTupleFromQuote", () => {
     const order = tronAttestedOrderTupleFromQuote({
       paymentRef: PAYMENT_REF,
       amount: AMOUNT.toString(),
-      token: ZERO_ADDRESS,
+      token: "native",
       ecosystem: "tron",
       chainId: 728126428,
       attestedContract: DEPOSIT_CONTRACT,
@@ -95,7 +115,7 @@ describe("tronAttestedOrderTupleFromQuote", () => {
         chainId: 728126428n,
         paymentRef: PAYMENT_REF,
         idHash: ("0x" + "cd".repeat(32)) as Hex,
-        token: ZERO_ADDRESS,
+        token: "native",
         amount: AMOUNT,
         cancelBefore: 1n,
         claimBefore: 2n,
@@ -114,6 +134,7 @@ describe("tronAttestedOrderTupleFromQuote", () => {
       "refundAfter",
     ]);
     expect(order.chainId).toBe("728126428");
+    expect(order.token).toBe(ZERO_ADDRESS);
 
     const data = encodeFunctionData({
       abi: HFI_PAY_ATTESTED_V1_ABI,
@@ -124,6 +145,15 @@ describe("tronAttestedOrderTupleFromQuote", () => {
     expect(decoded.functionName).toBe("depositNativeWithOrder");
     expect((decoded.args[0] as { chainId: bigint }).chainId).toBe(728126428n);
     expect((decoded.args[0] as { paymentRef: Hex }).paymentRef).toBe(PAYMENT_REF);
+  });
+
+  it("uses a typed build error for a non-Tron quote", () => {
+    expect(() => tronAttestedOrderTupleFromQuote({
+      paymentRef: ("0x" + "ab".repeat(32)) as `0x${string}`,
+      ecosystem: "evm",
+      amount: "1",
+      token: "0x0000000000000000000000000000000000000000",
+    })).toThrow(HfiPayBuildTxError);
   });
 });
 
@@ -198,15 +228,13 @@ describe("buildEvmApproveRequest", () => {
     expect(req.data.slice(0, 10)).toBe("0x095ea7b3");
   });
 
-  it("uses maxUint256 when approveAmount is omitted", () => {
+  it("uses the exact deposit amount when approveAmount is omitted", () => {
     const req = buildEvmApproveRequest({
       token: ERC20_TOKEN,
       depositContract: DEPOSIT_CONTRACT,
       amount: AMOUNT,
     });
-    // maxUint256 = 2^256 - 1; its hex appears in the calldata
-    const maxHex = "f".repeat(64);
-    expect(req.data.toLowerCase()).toContain(maxHex);
+    expect(BigInt(`0x${req.data.slice(-64)}`)).toBe(AMOUNT);
   });
 
   it("encodes a specific approveAmount when provided", () => {
@@ -217,8 +245,6 @@ describe("buildEvmApproveRequest", () => {
       amount: AMOUNT,
       approveAmount: specificAmount,
     });
-    // maxUint256 must NOT appear; specific amount is padded to 32 bytes
-    const maxHex = "f".repeat(64);
-    expect(req.data.toLowerCase()).not.toContain(maxHex);
+    expect(BigInt(`0x${req.data.slice(-64)}`)).toBe(specificAmount);
   });
 });

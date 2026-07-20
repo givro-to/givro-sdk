@@ -33,7 +33,7 @@
 ```
 以后任何人发到 alice@gmail.com
         ↓
-cancel 窗口过后（默认约 6 分钟）
+cancel 窗口过后（产品默认 10 分钟）
         ↓
 Portal relay 每 30 秒 tick 一次，检测 enrolled + 已绑定的订单
         ↓
@@ -49,7 +49,7 @@ Alice 只收到一条到账通知邮件
 Portal relay 每 30 秒扫描一次 `funded` / `funded_notified` 状态的订单。满足以下所有条件时触发 auto-claim：
 
 1. **enrolled**：接收方 email 已在 `auto_claim_enrollments` 表登记（首次 claim 后自动登记）
-2. **cancel window 已过**：`cancelBefore` 时间戳已过（默认约 6 分钟；合约最小 5 分钟，Portal 额外预留上链缓冲）
+2. **cancel window 已过**：`cancelBefore` 时间戳已过（产品默认 10 分钟；Portal 的安全下限为合约 5 分钟加 3 分钟上链缓冲）
 3. **on-chain binding 存在**：链上 `IdentityBinding PDA` 有有效的 `activeAddr`（即绑定了钱包地址）
 
 **Unbound 重试机制**：如果接收方尚未绑定钱包（binding PDA 不存在），relay 会在每次 tick 时继续重试，直到绑定完成。订单在首次通知后状态变为 `funded_notified`，但 relay 仍会对 `funded_notified` 状态的订单持续尝试 claim。

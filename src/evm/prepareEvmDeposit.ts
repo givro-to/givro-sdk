@@ -1,5 +1,6 @@
 import type { Address, Hex } from "viem";
-import { encodeFunctionData, maxUint256 } from "viem";
+import { encodeFunctionData } from "viem";
+import { HfiPayBuildTxError } from "../errors.js";
 import { HFI_PAY_ATTESTED_V1_ABI, HFI_PAY_DEPOSIT_ABI, ZERO_ADDRESS } from "./abi.js";
 
 const ERC20_APPROVE_ABI = [
@@ -26,21 +27,29 @@ export interface EvmTxRequest {
   value: bigint;
 }
 
-/** ERC-20: first tx — `approve(depositContract, amount)` (or max). */
+function assertCanonicalNonZeroContract(address: string, fieldName: string): void {
+  if (!/^0x[0-9a-fA-F]{40}$/.test(address) || /^0x0{40}$/i.test(address)) {
+    throw new HfiPayBuildTxError(`${fieldName} must be a canonical non-zero EVM address`);
+  }
+}
+
+/** ERC-20: first tx — `approve(depositContract, amount)`. */
 export function buildEvmApproveRequest(params: {
   token: Address;
   depositContract: Address;
   amount: bigint;
-  /** default unlimited approve */
+  /** Explicit override. Defaults to the exact deposit amount. */
   approveAmount?: bigint;
 }): EvmTxRequest {
+  assertCanonicalNonZeroContract(params.token, "token");
+  assertCanonicalNonZeroContract(params.depositContract, "depositContract");
   return {
     to: params.token,
     value: 0n,
     data: encodeFunctionData({
       abi: ERC20_APPROVE_ABI,
       functionName: "approve",
-      args: [params.depositContract, params.approveAmount ?? maxUint256],
+      args: [params.depositContract, params.approveAmount ?? params.amount],
     }),
   };
 }
@@ -63,6 +72,7 @@ export function buildEvmAttestedDepositRequest(params: {
   /** Relay node address to receive origin fee share. Omit for no relay (address(0)). */
   originRelayAddress?: Address;
 }): EvmTxRequest {
+  assertCanonicalNonZeroContract(params.depositContract, "depositContract");
   const o = params.order;
   const isNative = isNativeEvmToken(o.token);
   const relay: Address = params.originRelayAddress ?? ZERO_ADDRESS;
@@ -104,6 +114,7 @@ export function buildEvmDepositRequest(params: {
   token: Address;
   amount: bigint;
 }): EvmTxRequest {
+  assertCanonicalNonZeroContract(params.depositContract, "depositContract");
   if (isNativeEvmToken(params.token)) {
     return {
       to: params.depositContract,
@@ -131,6 +142,7 @@ export function buildEvmCancelRequest(params: {
   depositContract: Address;
   paymentRef: Hex;
 }): EvmTxRequest {
+  assertCanonicalNonZeroContract(params.depositContract, "depositContract");
   return {
     to: params.depositContract,
     value: 0n,
@@ -155,6 +167,7 @@ export function buildEvmBindTx(params: {
   recipientSig: Hex;
   serverSig: Hex;
 }): EvmTxRequest {
+  assertCanonicalNonZeroContract(params.attestedContract, "attestedContract");
   return {
     to: params.attestedContract,
     value: 0n,
@@ -174,6 +187,7 @@ export function buildEvmRevokePendingTx(params: {
   deadline: bigint;
   sig: Hex;
 }): EvmTxRequest {
+  assertCanonicalNonZeroContract(params.attestedContract, "attestedContract");
   return {
     to: params.attestedContract,
     value: 0n,
@@ -190,6 +204,7 @@ export function buildEvmClaimTx(params: {
   attestedContract: Address;
   paymentRef: Hex;
 }): EvmTxRequest {
+  assertCanonicalNonZeroContract(params.attestedContract, "attestedContract");
   return {
     to: params.attestedContract,
     value: 0n,
@@ -206,6 +221,7 @@ export function buildEvmRefundTx(params: {
   attestedContract: Address;
   paymentRef: Hex;
 }): EvmTxRequest {
+  assertCanonicalNonZeroContract(params.attestedContract, "attestedContract");
   return {
     to: params.attestedContract,
     value: 0n,

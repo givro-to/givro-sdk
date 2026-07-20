@@ -15,8 +15,13 @@ export interface QuoteRequestBody {
   amount?: string;
   /**
    * Token identifier. Accepts:
-   *  - EVM: checksummed `0x` token address, or a native symbol such as ETH
-   *  - Solana: base58 mint address, or "SOL" for native SOL
+   *  - EVM: checksummed `0x` token address, or the target chain's native symbol.
+   *    Native symbols require `chainId` and are rejected when they do not match it.
+   *  - Solana: base58 SPL mint address, or "SOL" / "native" for native SOL quotes.
+   *    The public supported-assets response currently does not provide a
+   *    trusted Program ID, so discovery alone is not sufficient to enable a
+   *    Solana funding path. Wrapped SOL is an SPL mint and must not be treated
+   *    as the native-SOL marker.
    *  - Tron: TRC20 contract (base58), or "TRX" for native TRX
    * Non-native symbols are not independently resolvable by the SDK and must be
    * converted through an application-owned, reviewed asset registry first.
@@ -26,20 +31,23 @@ export interface QuoteRequestBody {
   ecosystem?: ChainVm;
   /** Target VM / chain type. */
   vm?: ChainVm;
+  /** EVM or Tron chain ID. Solana uses cluster/program configuration instead. */
   chainId?: number;
   /**
-   * Cloudflare Turnstile token for `POST /api/intent/quote`.
-   * Omit when using a partner `X-API-Key` (server skips Turnstile).
+   * Fresh Cloudflare Turnstile token for consumer-browser
+   * `POST /api/intent/quote` requests. Production consumer quotes reject
+   * `X-API-Key`; enterprise server integrations must use Payment Links.
    */
   turnstile?: string;
-  /** Optional X sender uid (portal notifications). */
+  /** @deprecated Current Portal derives the X sender from `X-X-Session`. */
   senderXUid?: string;
-  /** Optional wallet that pays credits / attribution (see portal docs). */
+  /** Optional sender wallet. Requires a matching wallet-session Bearer token. */
   senderWalletAddr?: string;
   senderWalletEcosystem?: "evm" | "solana" | "tron";
   /**
-   * Cancel window in seconds. 0 = no cancel window (recipient notified immediately after deposit).
-   * Portal enforces a max (default 3600). Omit to use portal's default (typically 600).
+   * Requested cancel window in seconds. Portal clamps values, including 0, to
+   * its contract-compatible safety bounds. Omit to use the Portal default
+   * (typically 600 seconds).
    */
   cancelWindowSec?: number;
 }
@@ -57,7 +65,8 @@ export interface PaymentQuote {
   /** EVM: deployed `HfiPayDeposit` contract address */
   depositContract?: `0x${string}`;
   /**
-   * Attested `HfiPayAttested` contract. EVM: `0x…` address. Tron: portal returns hex (`0x…`) for TronWeb.
+   * Attested `HfiPayAttested` contract. EVM and Tron quotes use a canonical,
+   * non-zero `0x…` Solidity address; clients must independently pin it.
    */
   attestedContract?: string;
   /** EVM attested flow: canonical order fields for on-chain deposit */
@@ -65,7 +74,7 @@ export interface PaymentQuote {
     chainId: bigint;
     paymentRef: `0x${string}`;
     idHash: `0x${string}`;
-    /** EVM: `0x` token address. Tron: TRC20 base58 or hex per portal quote. */
+    /** EVM: `0x` token address. Tron native is normalized to the ABI zero address by the tuple helper. */
     token: string;
     amount: bigint;
     cancelBefore: bigint;
@@ -157,7 +166,7 @@ export interface PrepareSolanaSendParams {
   recipientKind: RecipientKind;
   recipient: string;
   amount: string;
-  /** SPL mint base58, or "SOL" for native SOL (not yet supported — use SPL wrapped SOL) */
+  /** SPL mint base58. Native SOL additionally requires an independently pinned Program and reviewed marker mapping. */
   mint: string;
   /** Build-reviewed cluster whose configured program must match the quote. */
   cluster: string;

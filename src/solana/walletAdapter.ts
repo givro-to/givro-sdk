@@ -9,7 +9,7 @@
  *   const wallet = useWallet();
  *   const { connection } = useConnection();
  *
- *   const result = await signAndSendSolanaDeposit(wallet, connection, {
+ *   const result = await signAndSendSolanaAttestedDeposit(wallet, connection, {
  *     programId: new PublicKey(DEFAULT_HFI_PAY_PROGRAM_ID),
  *     payer: wallet.publicKey!,
  *     mint: new PublicKey(quote.token),
@@ -21,6 +21,7 @@
 
 import type { Connection, VersionedTransaction } from "@solana/web3.js";
 import { buildSolanaAttestedDepositTransaction } from "./prepareSolanaDeposit.js";
+import { HfiPayBuildTxError, HfiPayError, HfiPayTimeoutError } from "../errors.js";
 
 /** Minimal interface satisfied by @solana/wallet-adapter-react WalletContextState. */
 export interface SolanaWalletLike {
@@ -42,12 +43,23 @@ export async function signAndSendSolanaAttestedDeposit(
   params: Parameters<typeof buildSolanaAttestedDepositTransaction>[1],
 ): Promise<SolanaDepositResult> {
   if (!wallet.sendTransaction) {
-    throw new Error("Wallet does not support sendTransaction");
+    throw new HfiPayError("WALLET_NOT_CONNECTED", "Solana wallet does not support sendTransaction");
   }
 
-  const tx = await buildSolanaAttestedDepositTransaction(connection, params);
-  const signature = await wallet.sendTransaction(tx, connection);
-  return { signature };
+  let tx: VersionedTransaction;
+  try {
+    tx = await buildSolanaAttestedDepositTransaction(connection, params);
+  } catch (err) {
+    if (err instanceof HfiPayError) throw err;
+    throw new HfiPayBuildTxError("could not build Solana attested deposit", { cause: err });
+  }
+  try {
+    const signature = await wallet.sendTransaction(tx, connection);
+    return { signature };
+  } catch (err) {
+    if (err instanceof HfiPayError) throw err;
+    throw new HfiPayError("SIGN_FAILED", "Solana wallet failed to sign or send the deposit", { cause: err });
+  }
 }
 
 /**
@@ -61,15 +73,21 @@ export async function waitForSolanaConfirmation(
 ): Promise<{ slot: number }> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const status = await connection.getSignatureStatus(signature);
-    const conf = status?.value?.confirmationStatus;
-    if (conf === "confirmed" || conf === "finalized") {
-      return { slot: status!.value!.slot };
+    let status: Awaited<ReturnType<Connection["getSignatureStatus"]>>;
+    try {
+      status = await connection.getSignatureStatus(signature);
+    } catch (err) {
+      throw new HfiPayError("NETWORK_ERROR", "Solana confirmation RPC request failed", { cause: err });
     }
-    if (status?.value?.err) {
-      throw new Error(`Solana transaction failed: ${JSON.stringify(status.value.err)}`);
+    const value = status?.value;
+    if (value?.err) {
+      throw new HfiPayError("TRANSACTION_FAILED", `Solana transaction failed: ${JSON.stringify(value.err)}`);
+    }
+    const conf = value?.confirmationStatus;
+    if (conf === "confirmed" || conf === "finalized") {
+      return { slot: value.slot };
     }
     await new Promise((r) => setTimeout(r, 1500));
   }
-  throw new Error(`Solana transaction not confirmed within ${timeoutMs}ms`);
+  throw new HfiPayTimeoutError(timeoutMs, { code: "NETWORK_TIMEOUT" });
 }

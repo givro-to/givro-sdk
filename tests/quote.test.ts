@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { coercePaymentQuote, fetchPaymentQuote, serializeQuoteRequestBody } from "../src/quote.js";
-import { HfiPayNetworkError, HfiPayQuoteError } from "../src/errors.js";
+import { HfiPayError, HfiPayNetworkError, HfiPayQuoteError } from "../src/errors.js";
 import type { QuoteRequestBody } from "../src/types.js";
 
 const VALID_REF = "0x" + "ab".repeat(32);
@@ -162,6 +162,21 @@ describe("coercePaymentQuote", () => {
     expect(q.attestedOrder?.amount).toBe(1000000n);
   });
 
+  it("canonicalizes explicit native aliases in quote responses", () => {
+    expect(coercePaymentQuote({ ...VALID_RAW, token: "ETH" }).token)
+      .toBe("0x0000000000000000000000000000000000000000");
+    expect(coercePaymentQuote({ ...VALID_RAW, ecosystem: "tron", token: "TRX" }).token)
+      .toBe("native");
+    expect(coercePaymentQuote({ ...VALID_RAW, ecosystem: "solana", token: "SOL" }).token)
+      .toBe("native");
+    expect(coercePaymentQuote({ ...VALID_RAW, token: "USDC" }).token).toBe("USDC");
+  });
+
+  it("rejects an EVM native symbol that does not match the quoted chain", () => {
+    expect(() => coercePaymentQuote({ ...VALID_RAW, token: "BNB" }))
+      .toThrow(/not the native asset for EVM chain 1/i);
+  });
+
   it("accepts order.amountWei alias for attested amount", () => {
     const raw = {
       paymentRef: VALID_REF,
@@ -228,14 +243,18 @@ describe("fetchPaymentQuote", () => {
     mockFetch.mockResolvedValueOnce(makeResponse(200, { not: "a quote" }));
     await expect(
       fetchPaymentQuote("https://example.com/quote", QUOTE_BODY, { fetchImpl: mockFetch }),
-    ).rejects.toThrow(/paymentRef/);
+    ).rejects.toBeInstanceOf(HfiPayQuoteError);
   });
 
-  it("propagates network-level errors (e.g. fetch throws)", async () => {
+  it("wraps network-level failures in a typed quote error", async () => {
     mockFetch.mockRejectedValueOnce(new Error("network failure"));
-    await expect(
-      fetchPaymentQuote("https://example.com/quote", QUOTE_BODY, { fetchImpl: mockFetch }),
-    ).rejects.toThrow("network failure");
+    try {
+      await fetchPaymentQuote("https://example.com/quote", QUOTE_BODY, { fetchImpl: mockFetch });
+      throw new Error("expected fetchPaymentQuote to reject");
+    } catch (err) {
+      expect(err).toBeInstanceOf(HfiPayError);
+      expect((err as HfiPayError).code).toBe("QUOTE_FETCH_FAILED");
+    }
   });
 
   it("retries on 5xx and succeeds on second attempt", async () => {
@@ -259,6 +278,55 @@ describe("fetchPaymentQuote", () => {
       }),
     ).rejects.toBeInstanceOf(HfiPayNetworkError);
     expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not automatically replay a single-use Turnstile token", async () => {
+    mockFetch.mockResolvedValue(makeResponse(503, "service unavailable"));
+    await expect(
+      fetchPaymentQuote("https://example.com/quote", { ...QUOTE_BODY, turnstile: "single-use" }, {
+        fetchImpl: mockFetch,
+        retry: { maxAttempts: 3, baseDelayMs: 0 },
+      }),
+    ).rejects.toBeInstanceOf(HfiPayNetworkError);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("also disables retry when the caller explicitly supplies an empty development Turnstile value", async () => {
+    mockFetch.mockResolvedValue(makeResponse(503, "service unavailable"));
+    await expect(
+      fetchPaymentQuote("https://example.com/quote", { ...QUOTE_BODY, turnstile: "" }, {
+        fetchImpl: mockFetch,
+        retry: { maxAttempts: 3, baseDelayMs: 0 },
+      }),
+    ).rejects.toBeInstanceOf(HfiPayNetworkError);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("canonicalizes only explicit native aliases when serializing", () => {
+    expect(serializeQuoteRequestBody({ ...QUOTE_BODY, token: "ETH" }).token)
+      .toBe("0x0000000000000000000000000000000000000000");
+    expect(serializeQuoteRequestBody({ ...QUOTE_BODY, token: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE" }).token)
+      .toBe("0x0000000000000000000000000000000000000000");
+    expect(serializeQuoteRequestBody({ ...QUOTE_BODY, chainId: 56, token: "BNB" }).token)
+      .toBe("0x0000000000000000000000000000000000000000");
+    expect(serializeQuoteRequestBody({ ...QUOTE_BODY, chainId: 137, token: "POL" }).token)
+      .toBe("0x0000000000000000000000000000000000000000");
+    expect(serializeQuoteRequestBody({ ...QUOTE_BODY, chainId: 43114, token: "AVAX" }).token)
+      .toBe("0x0000000000000000000000000000000000000000");
+    expect(serializeQuoteRequestBody({ ...QUOTE_BODY, chainId: 31337, token: "GO" }).token)
+      .toBe("0x0000000000000000000000000000000000000000");
+    expect(serializeQuoteRequestBody({ ...QUOTE_BODY, vm: "tron", ecosystem: "tron", token: "TRX" }).token)
+      .toBe("native");
+    expect(serializeQuoteRequestBody({ ...QUOTE_BODY, vm: "solana", ecosystem: "solana", token: "SOL" }).token)
+      .toBe("native");
+    expect(serializeQuoteRequestBody({ ...QUOTE_BODY, token: "USDC" }).token).toBe("USDC");
+  });
+
+  it("fails closed when an EVM native symbol has a missing or mismatched chainId", () => {
+    expect(() => serializeQuoteRequestBody({ ...QUOTE_BODY, chainId: undefined, token: "ETH" }))
+      .toThrow(/chainId is required/i);
+    expect(() => serializeQuoteRequestBody({ ...QUOTE_BODY, chainId: 8453, token: "BNB" }))
+      .toThrow(/not the native asset/i);
   });
 
   it("serializes Tron intent quote body with turnstile and human amount", () => {

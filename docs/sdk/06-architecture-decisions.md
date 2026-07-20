@@ -19,15 +19,18 @@ Portal 提供 `POST /api/intent/build-solana-tx` 端点，
 接收 `paymentRef + payerAddress + recentBlockhash`，
 返回未签名的 base64 VersionedTransaction。
 
-钱包只需要：
+钱包需要：
 1. 提供 payerAddress 和 recentBlockhash（任意 RPC 均可获取）
-2. 用标准 Ed25519 签名
-3. 提交
+2. 本地 decode 返回的 VersionedTransaction
+3. 验证 independently pinned Program ID、payer、mint/native marker、精确 amount、
+   全部 accounts、signer/writable 权限、指令参数，以及不存在额外指令
+4. 校验通过后用标准 Ed25519 签名并提交
 
 ### 权衡
 
-- ✅ 钱包零依赖，接入成本极低
-- ✅ 未签名 tx 对用户无风险（Portal 无法代替用户签名）
+- 钱包可避免自行实现 PDA 推导，但必须保留完整交易解析和策略校验能力
+- 未签名交易仍可能包含恶意 Program、账户权限或额外指令，不能直接签名
+- 同一 Portal 不能同时成为 quote 与待签交易内容的唯一信任根
 - 有 `@solana/web3.js` 的钱包应使用 `HfiPayClient.prepareSolanaTransaction` 本地构建，并通过 `trustedSolanaPrograms` 独立验证 Program ID
 
 ---
@@ -132,17 +135,20 @@ if (isEmail(input) || isXHandle(input)) {
 
 1. **地址生成**：集成方自行生成 keypair，将公钥地址提交给 HFI
 2. **HFI 审批**：HFI 将地址录入内部 partner 数据库（`partner_type = 'integrator'`）
-3. **SDK 配置**：集成方将地址硬编码进 SDK 初始化参数
+3. **交易构造**：集成方在每次构造交易时传入自己固定、审核过的归因地址
 
 ```typescript
-const client = createHfiPayClient({
-  quoteUrl: "https://hfi.network/api/intent/quote",
-  defaultRelayAddress: "0xYourRelayAddress", // EVM
-  // 或 Solana pubkey base58
+const txs = client.prepareEvmTransactions({
+  quote,
+  originRelayAddress: "0xYourReviewedRelayAddress",
 });
 ```
 
-4. **合约调用**：每笔 deposit 自动填入 `originRelayAddress`，合约记录该字段（纯归因，不做链上拆分）
+Solana 对应在 `prepareSolanaTransaction` 参数中传入 base58
+`originRelayAddress`；Tron 集成方在调用合约时把审核后的归因地址作为
+`originRelay` 参数传入。
+
+4. **合约调用**：deposit 写入 `originRelayAddress`，合约记录该字段（纯归因，不做链上拆分）
 5. **结算**：HFI 按周期统计，依阶梯政策计算应付金额，转账到集成方地址
 
 ### 冒用分析

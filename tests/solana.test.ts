@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { paymentRefHexToBytes } from "../src/solana/utils.js";
+import { signAndSendSolanaAttestedDeposit, waitForSolanaConfirmation } from "../src/index.js";
+import { HfiPayError } from "../src/errors.js";
+import type { Connection } from "@solana/web3.js";
 
 const VALID_HEX_NO_PREFIX = "ab".repeat(32); // 64 chars
 const VALID_HEX_WITH_PREFIX = "0x" + VALID_HEX_NO_PREFIX;
@@ -43,5 +46,57 @@ describe("paymentRefHexToBytes", () => {
 
   it("throws when string contains non-hex characters", () => {
     expect(() => paymentRefHexToBytes("zz".repeat(32))).toThrow();
+  });
+});
+
+describe("waitForSolanaConfirmation", () => {
+  it("returns the confirmed slot", async () => {
+    const connection = {
+      getSignatureStatus: async () => ({
+        context: { slot: 99 },
+        value: { slot: 42, confirmations: 1, err: null, confirmationStatus: "confirmed" },
+      }),
+    } as unknown as Connection;
+    await expect(waitForSolanaConfirmation(connection, "signature", 50)).resolves.toEqual({ slot: 42 });
+  });
+
+  it("rejects a failed transaction even if the RPC also reports confirmed", async () => {
+    const connection = {
+      getSignatureStatus: async () => ({
+        context: { slot: 99 },
+        value: {
+          slot: 42,
+          confirmations: 1,
+          err: { InstructionError: [0, "Custom"] },
+          confirmationStatus: "confirmed",
+        },
+      }),
+    } as unknown as Connection;
+    await expect(waitForSolanaConfirmation(connection, "signature", 50)).rejects.toThrow(/failed/i);
+  });
+
+  it("wraps confirmation RPC failures in a typed network error", async () => {
+    const connection = {
+      getSignatureStatus: async () => { throw new Error("rpc down"); },
+    } as unknown as Connection;
+    try {
+      await waitForSolanaConfirmation(connection, "signature", 50);
+      throw new Error("expected confirmation to fail");
+    } catch (err) {
+      expect(err).toBeInstanceOf(HfiPayError);
+      expect((err as HfiPayError).code).toBe("NETWORK_ERROR");
+    }
+  });
+});
+
+describe("signAndSendSolanaAttestedDeposit", () => {
+  it("fails with a typed wallet error when sendTransaction is unavailable", async () => {
+    try {
+      await signAndSendSolanaAttestedDeposit({}, {} as Connection, {} as never);
+      throw new Error("expected wallet validation to fail");
+    } catch (err) {
+      expect(err).toBeInstanceOf(HfiPayError);
+      expect((err as HfiPayError).code).toBe("WALLET_NOT_CONNECTED");
+    }
   });
 });

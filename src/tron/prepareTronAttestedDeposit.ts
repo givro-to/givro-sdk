@@ -1,5 +1,6 @@
 import type { PaymentQuote } from "../types.js";
 import { HFI_PAY_ATTESTED_V1_ABI } from "../evm/abi.js";
+import { HfiPayBuildTxError } from "../errors.js";
 
 /** Relay address meaning “no relay” — same as EVM `address(0)`; TronWeb accepts hex. */
 export const TRON_ATTESTED_ZERO_RELAY = "0x0000000000000000000000000000000000000000" as const;
@@ -28,14 +29,14 @@ export function assertTronAttestedQuote(
   attestedOrder: NonNullable<PaymentQuote["attestedOrder"]>;
 } {
   if (quote.ecosystem !== "tron") {
-    throw new Error("assertTronAttestedQuote: quote ecosystem must be tron");
+    throw new HfiPayBuildTxError("Tron quote ecosystem must be tron");
   }
   if (!quote.attestedContract || !quote.attestedOrder) {
-    throw new Error("assertTronAttestedQuote: missing attestedContract or attestedOrder");
+    throw new HfiPayBuildTxError("Tron quote is missing attestedContract or attestedOrder");
   }
   const o = quote.attestedOrder;
   if (!o.paymentRef || !o.idHash || !o.token || o.amount == null) {
-    throw new Error("assertTronAttestedQuote: incomplete attestedOrder");
+    throw new HfiPayBuildTxError("Tron quote has an incomplete attestedOrder");
   }
 }
 
@@ -43,11 +44,12 @@ export function assertTronAttestedQuote(
 export function tronAttestedOrderTupleFromQuote(quote: PaymentQuote): TronAttestedOrderTuple {
   assertTronAttestedQuote(quote);
   const o = quote.attestedOrder;
+  const token = o.token.toLowerCase() === "native" ? TRON_ATTESTED_ZERO_RELAY : o.token;
   return {
     chainId: o.chainId.toString(),
     paymentRef: o.paymentRef,
     idHash: o.idHash,
-    token: o.token,
+    token,
     amount: o.amount.toString(),
     cancelBefore: o.cancelBefore.toString(),
     claimBefore: o.claimBefore.toString(),

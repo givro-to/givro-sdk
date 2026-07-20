@@ -10,26 +10,34 @@ describe("normalizeEmail", () => {
     expect(normalizeEmail("  user@example.com  ")).toBe("user@example.com");
   });
 
-  it("strips plus alias from local part", () => {
-    expect(normalizeEmail("user+alias@example.com")).toBe("user@example.com");
+  it("preserves plus aliases for non-Gmail providers", () => {
+    expect(normalizeEmail("user+alias@example.com")).toBe("user+alias@example.com");
   });
 
-  it("strips plus alias and lowercases", () => {
-    expect(normalizeEmail("User+Tag@Example.COM")).toBe("user@example.com");
+  it("preserves dots for non-Gmail providers", () => {
+    expect(normalizeEmail("First.Last@Example.COM")).toBe("first.last@example.com");
+  });
+
+  it("strips Gmail plus aliases and dots", () => {
+    expect(normalizeEmail("First.Last+Tag@Gmail.COM")).toBe("firstlast@gmail.com");
+  });
+
+  it("canonicalizes googlemail.com to gmail.com", () => {
+    expect(normalizeEmail("First.Last+Tag@GoogleMail.COM")).toBe("firstlast@gmail.com");
   });
 
   it("returns lowercased string as-is when no @ present", () => {
     expect(normalizeEmail("notanemail")).toBe("notanemail");
   });
 
-  it("handles multiple plus signs — strips from first", () => {
-    expect(normalizeEmail("a+b+c@x.io")).toBe("a@x.io");
+  it("preserves multiple plus signs outside Gmail", () => {
+    expect(normalizeEmail("a+b+c@x.io")).toBe("a+b+c@x.io");
   });
 });
 
 describe("normalizeRecipient", () => {
   it("email: normalizes via normalizeEmail", () => {
-    expect(normalizeRecipient("email", "User+Tag@Example.COM")).toBe("user@example.com");
+    expect(normalizeRecipient("email", "User+Tag@Example.COM")).toBe("user+tag@example.com");
   });
 
   it("email without @: lowercases", () => {

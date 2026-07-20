@@ -25,12 +25,13 @@
 ## 安装
 
 ```bash
-npm install hfi-sdk
-
-# peer deps（按需安装）
-npm install @solana/web3.js @solana/spl-token   # Solana
-npm install viem                                  # EVM
+npm install hfi-sdk viem @solana/web3.js @solana/spl-token
+# 仅使用本文 wagmi 示例时需要：
+npm install wagmi @tanstack/react-query
 ```
+
+当前根 ESM 入口同时导出 EVM 与 Solana helper，因此 `viem`、
+`@solana/web3.js`、`@solana/spl-token` 是必需 peer dependency，并非按链可选。
 
 SDK 按 `vm` / `ecosystem` 路由支付能力，类型层支持 `evm`、`solana`、`tron`。类型或构造器存在不代表对应网络已经上线；当前生产集成只能使用 Portal 实际返回并经发布审核的 Base + Tron 配置。
 
@@ -44,6 +45,6 @@ SDK 按 `vm` / `ecosystem` 路由支付能力，类型层支持 `evm`、`solana`
 
 **IdentityBinding PDA** — 链上存储接收方绑定钱包地址的账户，seeds 为 `["binding", idHash]`。relay claim 时合约从此 PDA 读取目标地址，不信任 relay 传入的参数。任何人可验证，无需信任 Portal。
 
-**cancel window** — 发送方有一段时间（默认 360 秒；合约最小值 300 秒，Portal 额外预留上链缓冲）可以在接收方收到通知前撤销付款。超过 cancel window 后，资金锁定，只有接收方（或 relay）可以 claim。
+**cancel window** — 发送方有一段时间（产品默认 600 秒；Portal 安全下限为合约最小 300 秒加 180 秒上链缓冲）可以撤销付款。超过 cancel window 后，资金锁定，只有接收方（或 relay）可以 claim。
 
-**originRelayAddress** — deposit 时由 SDK 填入的集成方链上地址，用于交易归因和收益结算。详见 [ADR-005](./06-architecture-decisions.md#adr-005sdk-integrator-身份认证与费用归因)。
+**originRelayAddress** — 集成方在交易构造时显式传给 SDK 的固定链上地址，用于交易归因和收益结算。详见 [ADR-005](./06-architecture-decisions.md#adr-005sdk-integrator-身份认证与费用归因)。

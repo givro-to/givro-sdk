@@ -4,12 +4,16 @@ export type HfiPayErrorCode =
   | "QUOTE_FETCH_FAILED"
   | "QUOTE_INVALID"
   | "QUOTE_TIMEOUT"
+  | "CONFIG_TIMEOUT"
+  | "NETWORK_TIMEOUT"
+  | "CONFIG_INVALID"
   | "BUILD_TX_FAILED"
   | "MISSING_DEPOSIT_CONTRACT"
   | "WRONG_ECOSYSTEM"
   | "INVALID_PAYMENT_REF"
   | "WALLET_NOT_CONNECTED"
   | "SIGN_FAILED"
+  | "TRANSACTION_FAILED"
   | "NETWORK_ERROR";
 
 export class HfiPayError extends Error {
@@ -22,15 +26,19 @@ export class HfiPayError extends Error {
   }
 }
 
-/** HTTP or network error when calling the quote service. */
+/** HTTP error returned by an HFI Pay service endpoint. */
 export class HfiPayNetworkError extends HfiPayError {
   readonly statusCode: number;
   readonly responseBody: string;
 
-  constructor(statusCode: number, responseBody: string, options?: ErrorOptions) {
+  constructor(
+    statusCode: number,
+    responseBody: string,
+    options?: ErrorOptions & { code?: "QUOTE_FETCH_FAILED" | "NETWORK_ERROR" },
+  ) {
     super(
-      "QUOTE_FETCH_FAILED",
-      `HFI Pay quote service returned HTTP ${statusCode}: ${responseBody || "(empty)"}`,
+      options?.code ?? "QUOTE_FETCH_FAILED",
+      `HFI Pay service returned HTTP ${statusCode}: ${responseBody || "(empty)"}`,
       options,
     );
     this.name = "HfiPayNetworkError";
@@ -47,12 +55,23 @@ export class HfiPayQuoteError extends HfiPayError {
   }
 }
 
-/** Quote request timed out before a response was received. */
+/** Public runtime configuration response was missing required fields. */
+export class HfiPayConfigError extends HfiPayError {
+  constructor(message: string, options?: ErrorOptions) {
+    super("CONFIG_INVALID", `HFI Pay public configuration invalid: ${message}`, options);
+    this.name = "HfiPayConfigError";
+  }
+}
+
+/** HFI Pay service request timed out before a response was received. */
 export class HfiPayTimeoutError extends HfiPayError {
   readonly timeoutMs: number;
 
-  constructor(timeoutMs: number, options?: ErrorOptions) {
-    super("QUOTE_TIMEOUT", `HFI Pay quote timed out after ${timeoutMs}ms`, options);
+  constructor(
+    timeoutMs: number,
+    options?: ErrorOptions & { code?: "QUOTE_TIMEOUT" | "CONFIG_TIMEOUT" | "NETWORK_TIMEOUT" },
+  ) {
+    super(options?.code ?? "QUOTE_TIMEOUT", `HFI Pay request timed out after ${timeoutMs}ms`, options);
     this.name = "HfiPayTimeoutError";
     this.timeoutMs = timeoutMs;
   }

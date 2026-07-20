@@ -4,6 +4,7 @@ export {
   HfiPayError,
   HfiPayNetworkError,
   HfiPayQuoteError,
+  HfiPayConfigError,
   HfiPayTimeoutError,
   HfiPayBuildTxError,
   type HfiPayErrorCode,
@@ -20,6 +21,16 @@ export {
   coercePaymentQuote,
   serializeQuoteRequestBody,
 } from "./quote.js";
+export {
+  fetchPublicSupportedAssets,
+  type FetchPublicSupportedAssetsOptions,
+  type PublicEvmAsset,
+  type PublicNetworkProfile,
+  type PublicSolanaAsset,
+  type PublicSupportedAssetsConfig,
+  type PublicSupportedChain,
+  type PublicTronAsset,
+} from "./supportedAssets.js";
 export type {
   ChainVm,
   PaymentQuote,
@@ -64,6 +75,12 @@ export {
   svmDestinationAuthBytes,
 } from "./solana/claimDigest.js";
 export { paymentRefHexToBytes } from "./solana/utils.js";
+export {
+  signAndSendSolanaAttestedDeposit,
+  waitForSolanaConfirmation,
+  type SolanaDepositResult,
+  type SolanaWalletLike,
+} from "./solana/walletAdapter.js";
 export { HfiPayClient, createHfiPayClient } from "./client.js";
 export {
   TRON_ATTESTED_ZERO_RELAY,

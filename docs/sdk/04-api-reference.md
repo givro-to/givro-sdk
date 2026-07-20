@@ -18,14 +18,25 @@ Base URL: `https://hfi.network`
 {
   identifier: string;         // 收款方标识符（规范化后）
   identifierKind: 'email' | 'x' | 'phone';
+  amount?: string;             // 人类可读金额，用于 UI/策略元数据
   amountWei: string;          // 最小单位金额（字符串）
-  token: string;              // SPL mint base58 / EVM 0x addr / 'SOL' / 'ETH'
+  token: string;              // SPL mint / EVM 0x addr / 原生币符号（须与 chainId 匹配）
   vm?: 'solana' | 'evm' | 'tron';  // 目标 VM（推荐，取代 ecosystem）
   ecosystem?: 'solana' | 'evm' | 'tron';   // vm 的别名，两者效果相同
-  chainId?: number;           // EVM only
-  cancelWindowSec?: number;   // 取消窗口（秒），默认/服务端最小 360；合约硬下限 300
+  chainId?: number;           // EVM / Tron；Solana 使用 cluster/program 配置
+  turnstile: string;          // production consumer browser quote 必填
+  cancelWindowSec?: number;   // 取消窗口（秒），产品默认 600；Portal 安全下限 480
 }
 ```
+
+EVM 原生币符号按 `chainId` 严格解析；缺少链 ID 或符号与目标链不一致时 SDK 会
+fail closed。EVM/Tron 的 attested settlement 地址必须是 independently pinned、
+非零的规范 `0x` 地址。Tron native order tuple 中的 `token` 会被 SDK 规范化为
+Solidity ABI zero address，调用 TronWeb 前可按所用版本转换为 `41…`/base58。
+
+鉴权边界：production consumer quote 必须携带浏览器获得的新鲜 Turnstile token；
+`X-API-Key` 会被拒绝。`identifierKind='x'` 时还需 `X-X-Session` 请求头，绑定当前
+发送方 X 登录态。企业服务器调用使用 Payment Links API，而不是 consumer quote。
 
 **Response**（SDK 通过 `coercePaymentQuote` 规范化后的字段）
 
@@ -66,6 +77,27 @@ Base URL: `https://hfi.network`
 
 ---
 
+### GET /api/public/supported-assets
+
+返回当前 Portal 的 profile、registry version、chain、token 以及已配置的
+`attestedContract`（EVM/Tron）。SDK 提供类型化 helper：
+
+```typescript
+import { fetchPublicSupportedAssets } from 'hfi-sdk';
+
+const runtime = await fetchPublicSupportedAssets('https://hfi.network');
+```
+
+该响应仅用于 onboarding/build-time discovery。集成方必须独立审核地址并固化到
+`trustedAttestedContracts`；不得在每笔 quote 时动态信任同一 Portal 返回的地址。
+当前响应不包含 Solana `programId`，不得把该 helper 当作
+`trustedSolanaPrograms` 的来源。Program ID 必须通过独立发布渠道获取和审核。
+native SOL marker 也必须与审核后的 Program、mint policy 和交易指令单独对齐；
+supported-assets 响应本身不能证明 native SOL funding 已闭环。Wrapped SOL 是 SPL token
+mint，不能当作 native SOL marker。
+
+---
+
 ### POST /api/intent/build-solana-tx
 
 让 Portal 构建未签名的 Solana deposit VersionedTransaction。  
@@ -89,18 +121,21 @@ Base URL: `https://hfi.network`
 }
 ```
 
-钱包收到后用 Ed25519 签名，然后通过 `sendTransaction` RPC 提交。  
-速率限制：每 IP 60 次/分钟。
+钱包必须先在本地 decode，并验证固定 Program ID、payer、mint/native marker、精确
+amount、全部账户及 signer/writable 权限、指令 discriminator/参数，以及不存在额外指令；
+全部通过后才能用 Ed25519 签名并广播。同一 Portal 返回的 quote 和未签名交易不能共同
+构成唯一信任根。
+速率限制：每 IP 30 次/分钟。
 
 ---
 
 ### POST /api/intent/otp/send
 
-向 email 或手机发送 OTP。
+为指定付款向收款邮箱发送 claim OTP。
 
 ```typescript
 // body
-{ identifier: string; identifierKind: 'email' | 'phone' }
+{ email: string; paymentRef: string }
 // response
 { ok: true }
 ```
@@ -111,7 +146,7 @@ Base URL: `https://hfi.network`
 
 ```typescript
 // body
-{ identifier: string; identifierKind: 'email' | 'phone'; code: string }
+{ email: string; paymentRef: string; code: string }
 // response
 { verificationToken: string; expiresAt: number }
 ```
@@ -142,6 +177,8 @@ function fetchPaymentQuote(
 ```
 
 返回值已经过 `coercePaymentQuote` 规范化（camelCase，bigint 类型等）。
+请求包含一次性 `turnstile` 时，SDK 强制 `maxAttempts=1`，不会自动重放。
+失败后调用方必须获取新的 Turnstile token，再由用户发起重试。
 
 ---
 
@@ -166,16 +203,21 @@ const client = createHfiPayClient({
 
 - `client.fetchQuote(body)` — 底层报价，传入 QuoteRequestBody
 - `client.quoteSend(params)` — 更易用的报价接口，含 normalizeRecipient
-- `client.prepareEvmTransactions({ quote, originRelayAddress? })` — 要求 attested EVM quote 且合约位于 `trustedAttestedContracts`，返回 `{ approve, deposit }` tx 对象
+- `client.prepareEvmTransactions({ quote, originRelayAddress? })` — 要求 attested EVM quote 且合约位于 `trustedAttestedContracts`，返回 `{ approve, deposit }` tx 对象；ERC-20 approve 默认严格等于本次 deposit 金额
 - `client.prepareSolanaTransaction(connection, { quote, payer, cluster, recentBlockhash?, originRelayAddress? })` — 要求报价 Program 位于 `trustedSolanaPrograms[cluster]`，返回 VersionedTransaction
 
 ---
 
 ### 资金交易低层构造器
 
-包根不导出接受任意结算合约或 Solana Program 的资金构造器。应用必须通过
-`HfiPayClient` 的 pinned builder 构造交易；生命周期辅助函数不受此限制，因为它们不创建
-新的 token allowance 或资金存款。
+包根不导出接受任意 EVM 结算合约的资金构造器。应用必须通过 `HfiPayClient` 的
+pinned builder 构造 EVM 交易；生命周期辅助函数不受此限制，因为它们不创建新的
+token allowance 或资金存款。
+
+Solana 面向已完成独立参数审核的钱包集成提供
+`signAndSendSolanaAttestedDeposit(wallet, connection, params)`。该 helper 现已从包根导出，
+但不会替调用方验证 Program ID 或 mint policy；调用方必须只传入 independently pinned、
+与报价逐字段核对后的参数。普通集成仍应优先使用 `client.prepareSolanaTransaction`。
 
 ---
 
@@ -216,10 +258,11 @@ import { normalizeRecipient, normalizeEmail } from 'hfi-sdk';
 
 normalizeRecipient('email', 'Alice+tag@Gmail.COM')   // 'alice@gmail.com'
 normalizeRecipient('x', '@Alice')                     // 'alice'
-normalizeRecipient('phone', '+86 138 0000 0000')      // '+861380000000'（trimmed）
+normalizeRecipient('phone', '  +86 138 0000 0000  ')  // '+86 138 0000 0000'（仅 trim）
 
-// 仅 email 规范化（去掉 + 后缀，小写，保留 domain）
-normalizeEmail('Alice+tag@Gmail.COM')                 // 'alice@gmail.com'
+// Gmail/Googlemail 去点、去 +tag，并统一为 gmail.com；其他 provider 保留 local part
+normalizeEmail('First.Last+tag@GoogleMail.COM')       // 'firstlast@gmail.com'
+normalizeEmail('Alice+tag@Example.COM')               // 'alice+tag@example.com'
 ```
 
 ---
@@ -241,7 +284,7 @@ toBaseUnits('100', 18)   // '100000000000000000000'  ETH wei
 ### Solana
 
 ```typescript
-// 程序 ID（由 Portal 报价返回覆盖，生产环境以报价值为准）
+// 开发默认值；生产环境必须把独立审核的 Program ID 固化到 trustedSolanaPrograms
 DEFAULT_HFI_PAY_PROGRAM_ID = 'B8sLQ5g6ABbZyyuyx9hia4kFv8nMo4wCqWXcLcR9XpJZ'
 
 // Anchor discriminators（sha256("global:<name>").slice(0,8)）
