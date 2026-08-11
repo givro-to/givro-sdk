@@ -14,7 +14,8 @@ export type GivroPayErrorCode =
   | "WALLET_NOT_CONNECTED"
   | "SIGN_FAILED"
   | "TRANSACTION_FAILED"
-  | "NETWORK_ERROR";
+  | "NETWORK_ERROR"
+  | "ENTERPRISE_API_ERROR";
 
 export class GivroPayError extends Error {
   readonly code: GivroPayErrorCode;
@@ -82,5 +83,30 @@ export class GivroPayBuildTxError extends GivroPayError {
   constructor(message: string, options?: ErrorOptions) {
     super("BUILD_TX_FAILED", `Givro TX build failed: ${message}`, options);
     this.name = "GivroPayBuildTxError";
+  }
+}
+
+/** HTTP error returned by the server-side Enterprise API. */
+export class GivroEnterpriseApiError extends GivroPayError {
+  readonly statusCode: number;
+  readonly responseBody: unknown;
+  readonly requestId?: string;
+
+  constructor(
+    statusCode: number,
+    responseBody: unknown,
+    options?: ErrorOptions & { requestId?: string },
+  ) {
+    const body = responseBody && typeof responseBody === "object" ? responseBody as Record<string, unknown> : undefined;
+    const message = typeof body?.error === "string"
+      ? body.error
+      : typeof body?.message === "string"
+        ? body.message
+        : `Givro Enterprise API returned HTTP ${statusCode}`;
+    super("ENTERPRISE_API_ERROR", message, options);
+    this.name = "GivroEnterpriseApiError";
+    this.statusCode = statusCode;
+    this.responseBody = responseBody;
+    this.requestId = options?.requestId;
   }
 }

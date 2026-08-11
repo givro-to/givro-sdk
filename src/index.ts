@@ -7,6 +7,7 @@ export {
   GivroPayConfigError,
   GivroPayTimeoutError,
   GivroPayBuildTxError,
+  GivroEnterpriseApiError,
   type GivroPayErrorCode,
 } from "./errors.js";
 export {
@@ -82,6 +83,20 @@ export {
   type SolanaWalletLike,
 } from "./solana/walletAdapter.js";
 export { GivroPayClient, createGivroPayClient } from "./client.js";
+export {
+  GivroEnterpriseClient,
+  createGivroEnterpriseClient,
+  type CreateEmailPaymentLinkParams,
+  type CreatePaymentLinkParams,
+  type EmailPaymentLinkBatchItem,
+  type EmailPaymentLinkBatchResponse,
+  type EnterpriseEcosystem,
+  type EnterpriseFeePayer,
+  type EnterpriseSettlementMode,
+  type GivroEnterpriseClientConfig,
+  type ListPaymentLinksParams,
+  type PaymentLinkResponse,
+} from "./enterprise.js";
 export {
   TRON_ATTESTED_ZERO_RELAY,
   GIVRO_PAY_ATTESTED_ABI_TRON,

@@ -61,6 +61,40 @@ The root package currently exports EVM and Solana helpers from one ESM entry,
 so `viem`, `@solana/web3.js`, and `@solana/spl-token` are required peers even
 when an application uses only one settlement VM.
 
+## Enterprise server integration
+
+`GivroEnterpriseClient` is for a merchant's server only. It creates hosted
+Payment Links with an Enterprise API key; it never signs a user's wallet
+transaction or takes custody of funds. Do not import it into a browser bundle.
+
+```typescript
+import { createGivroEnterpriseClient } from "givro-sdk";
+
+const enterprise = createGivroEnterpriseClient({
+  apiKey: process.env.GIVRO_LIVE_API_KEY!,
+});
+
+const link = await enterprise.createAndEmailPaymentLink({
+  payer_email: "customer@example.com",
+  recipient: "merchant@example.com",
+  recipient_kind: "email",
+  amount: "10.00",
+  ecosystem: "evm",
+  chainId: 8453,
+  token_symbol: "USDC",
+  settlement_mode: "mainnet",
+  merchant_ref: "invoice_1001",
+}, "invoice_1001_v1");
+
+// Persist link.payment_link_id and reconcile final settlement from signed webhooks.
+console.log(link.pay_url);
+```
+
+Every create method requires an explicit idempotency key. Reuse it only for an
+identical request body. Test keys create simulated Payment Links; live keys
+create mainnet links. The server is authoritative for the key's environment,
+enabled chain/token pairs, and payment-link fields.
+
 ## Quick start — EVM (viem / wagmi)
 
 EVM native symbols are resolved together with `chainId` and fail closed: for
