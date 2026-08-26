@@ -17,8 +17,10 @@
   "scripts": {
     "build": "tsc",
     "prepublishOnly": "npm run build",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "test": "vitest run --exclude 'tests/e2e/**' --exclude '**/node_modules/**'",
+    "test:watch": "vitest",
+    "test:e2e": "vitest run tests/e2e",
+    "typecheck": "tsc --noEmit --project tsconfig.test.json"
   },
   "peerDependencies": {
     "@solana/spl-token": "^0.4.0",

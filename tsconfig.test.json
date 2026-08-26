@@ -1,0 +1,16 @@
+{
+  "//": "The build tsconfig compiles src only, so tests were never typechecked -- a test could call an exported function with the wrong signature and no build step would object. This extends it to cover them, without changing what ships in dist.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": [
+      "node"
+    ],
+    "resolveJsonModule": true,
+    "rootDir": "."
+  },
+  "include": [
+    "src/**/*.ts",
+    "tests/**/*.ts"
+  ]
+}
