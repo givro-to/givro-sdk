@@ -49,6 +49,48 @@ The registry's native-SOL marker is also not sufficient by itself to prove that
 the quote, transaction builder, and deployed native-SOL instruction are aligned.
 Wrapped SOL is an SPL token mint, not a substitute for the native-SOL marker.
 
+## Settlement rails: v1 attested and v2 intent-blinded
+
+A quote tells you which escrow generation it is for, in `protocolVersion`.
+
+**v1 (attested)** tagged every payment to a recipient with a stable on-chain
+`idHash`, so any observer could link two payments to the same person. **v2
+(intent-blinded)** replaces that tag with a `blindedBinding` derived fresh for
+each intent. The order tuple therefore has eleven fields rather than eight, the
+escrow rejects a binding it has already seen, and the two rails share no deposit
+selector.
+
+They do share a quote shape, and that is the trap this SDK now closes. A v2
+quote still carries the legacy `order` block for older readers, and its
+`attestedContract` is a real, non-zero, correctly-checksummed address — the v2
+escrow. Nothing about the response stops a v1 code path from accepting it and
+producing a transaction that the chain throws out on broadcast. So
+`coercePaymentQuote` does not populate `depositContract` or `attestedOrder` from
+a v2 quote at all:
+
+```typescript
+const quote = coercePaymentQuote(raw);
+quote.protocolVersion;        // 2
+quote.intentBlinded?.escrow;  // the v2 escrow
+quote.depositContract;        // undefined -- deliberately
+quote.attestedOrder;          // undefined -- deliberately
+```
+
+`prepareEvmTransactions` handles both rails and checks the same
+`trustedAttestedContracts` pin either way, so the quick start below is unchanged
+for a v2 portal. To pick the builder yourself, use `buildEvmDepositFromQuote`,
+which requires the escrow you pinned and refuses a quote that names a different
+one.
+
+`cancelByPayer(bytes32)` and `refund(bytes32)` are selector-identical across the
+rails, so `buildEvmCancelRequest` and `buildEvmRefundTx` work against either
+escrow. `buildEvmClaimTx` and `buildEvmBindTx` are v1 only: v2 has no
+`claim(bytes32)` — that function existed to read an on-chain recipient registry,
+which is exactly what v2 removes — and binding moved to `registerPayoutMandate`.
+A v2 claim is a per-payment recipient signature over `INTENT_CLAIM_TYPES` in
+`intentBlindedDomain`, orchestrated by the portal's `/api/intent/claim/v2/*`
+endpoints.
+
 ## Install
 
 ```bash

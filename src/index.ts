@@ -59,6 +59,20 @@ export {
   type EvmTxRequest,
 } from "./evm/prepareEvmDeposit.js";
 export {
+  GIVRO_PAY_INTENT_BLINDED_ABI,
+  CLAIM_AUTHORIZATION,
+  PAYOUT_MANDATE_TYPES,
+  INTENT_CLAIM_TYPES,
+  intentBlindedDomain,
+  buildIntentBlindedNativeDeposit,
+  buildIntentBlindedErc20Deposit,
+  buildIntentBlindedCancelTx,
+  buildIntentBlindedRefundTx,
+  type ClaimAuthorization,
+  type IntentBlindedOrder,
+} from "./evm/prepareIntentBlindedDeposit.js";
+export { buildEvmDepositFromQuote, type EvmDepositPlan } from "./evm/depositFromQuote.js";
+export {
   DEFAULT_GIVRO_PAY_PROGRAM_ID,
   DEPOSIT_NATIVE_DISCRIMINATOR,
   DEPOSIT_SPL_DISCRIMINATOR,

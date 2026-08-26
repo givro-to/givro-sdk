@@ -1,6 +1,10 @@
 import type { Connection } from "@solana/web3.js";
 import { PublicKey } from "@solana/web3.js";
 import type { Address } from "viem";
+import {
+  buildIntentBlindedErc20Deposit,
+  buildIntentBlindedNativeDeposit,
+} from "./evm/prepareIntentBlindedDeposit.js";
 import { GivroPayBuildTxError, GivroPayQuoteError } from "./errors.js";
 import { normalizeRecipient, type RecipientKind } from "./identifier.js";
 import { canonicalQuoteToken, fetchPaymentQuote } from "./quote.js";
@@ -247,6 +251,30 @@ export class GivroPayClient {
   }): { approve: ReturnType<typeof buildEvmApproveRequest> | null; deposit: ReturnType<typeof buildEvmAttestedDepositRequest> } {
     const q = params.quote;
     if (q.ecosystem !== "evm") throw new GivroPayBuildTxError("quote ecosystem must be evm");
+
+    // v2 first: the portal issues these for every chain it has migrated, and a
+    // v2 quote must never reach the v1 branch below. Both rails put the
+    // settlement contract in `attestedContract`, so the same pin the caller
+    // already configured is the one checked here -- an integrator does not
+    // have to learn a second trust list to move across rails.
+    if (q.protocolVersion === 2) {
+      const material = q.intentBlinded;
+      if (!material) throw new GivroPayBuildTxError("v2 quote carries no intentBlinded material");
+      this.assertTrustedAttestedContract(q);
+      if (material.escrow.toLowerCase() !== (q.attestedContract as string).toLowerCase()) {
+        throw new GivroPayQuoteError("intentBlinded.escrow disagrees with the quote's attestedContract");
+      }
+      const escrow = material.escrow as Address;
+      const order = { ...material.order, token: material.order.token as Address };
+      if (isNativeEvmToken(order.token)) {
+        return {
+          approve: null,
+          deposit: buildIntentBlindedNativeDeposit({ escrow, order, mandateCommit: material.mandateCommit }),
+        };
+      }
+      return buildIntentBlindedErc20Deposit({ escrow, order, mandateCommit: material.mandateCommit });
+    }
+
     const isAttested = Boolean(q.attestedContract && q.attestedOrder);
 
     if (isAttested) {
@@ -272,6 +300,7 @@ export class GivroPayClient {
     }
 
     throw new GivroPayBuildTxError("attested EVM quote required: quote must include attestedContract and attestedOrder");
+
   }
 
   /**

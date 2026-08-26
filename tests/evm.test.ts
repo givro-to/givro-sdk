@@ -105,6 +105,7 @@ describe("buildEvmAttestedDepositRequest", () => {
 describe("tronAttestedOrderTupleFromQuote", () => {
   it("returns the tuple shape and order expected by GivroPayAttestedTron", () => {
     const order = tronAttestedOrderTupleFromQuote({
+      protocolVersion: 1,
       paymentRef: PAYMENT_REF,
       amount: AMOUNT.toString(),
       token: "native",
@@ -149,6 +150,7 @@ describe("tronAttestedOrderTupleFromQuote", () => {
 
   it("uses a typed build error for a non-Tron quote", () => {
     expect(() => tronAttestedOrderTupleFromQuote({
+      protocolVersion: 1,
       paymentRef: ("0x" + "ab".repeat(32)) as `0x${string}`,
       ecosystem: "evm",
       amount: "1",

@@ -31,6 +31,15 @@ export function assertTronAttestedQuote(
   if (quote.ecosystem !== "tron") {
     throw new GivroPayBuildTxError("Tron quote ecosystem must be tron");
   }
+  // A v2 quote reaches here with `attestedOrder` already stripped, so the
+  // generic message below would be true but useless. Say what actually
+  // happened: the portal moved this chain to the intent-blinded escrow, whose
+  // deposit tuple has eleven fields and no `idHash`.
+  if (quote.protocolVersion === 2) {
+    throw new GivroPayBuildTxError(
+      "Tron quote is on the v2 intent-blinded rail; the attested v1 deposit path does not apply to it",
+    );
+  }
   if (!quote.attestedContract || !quote.attestedOrder) {
     throw new GivroPayBuildTxError("Tron quote is missing attestedContract or attestedOrder");
   }

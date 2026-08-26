@@ -1,0 +1,36 @@
+{
+  "ok": true,
+  "paymentRef": "0xe57b7a1f92c64a6205d929dc3ec60936bff121a5bec6d0ad04b0ce8982897f2c",
+  "order": {
+    "chainId": 31338,
+    "paymentRef": "0xe57b7a1f92c64a6205d929dc3ec60936bff121a5bec6d0ad04b0ce8982897f2c",
+    "idHash": "0xeb1fcb54be067acb515e28a5fca4e80af11d096ae53c010006c5b2ec8aaef281",
+    "token": "0x0000000000000000000000000000000000000000",
+    "amount": "1000000000000000",
+    "cancelBefore": "1787723527",
+    "claimBefore": "1788328327",
+    "refundAfter": "1788328387"
+  },
+  "attestedContract": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+  "protocolVersion": 2,
+  "intentBlinded": {
+    "escrow": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+    "mandateCommit": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "order": {
+      "chainId": 31338,
+      "paymentRef": "0xe57b7a1f92c64a6205d929dc3ec60936bff121a5bec6d0ad04b0ce8982897f2c",
+      "intentId": "0x8d600f158f1173d8179e2d4bb58b8940afc394d777b05116488789f0d9bb7136",
+      "blindedBinding": "0x626e918d8ad94a27ff2358ec415a4d475ba2e47f9fd80e9fc13a01456b1d82b5",
+      "bindingEpoch": "1",
+      "claimAuthorization": 0,
+      "token": "0x0000000000000000000000000000000000000000",
+      "amount": "1000000000000000",
+      "cancelBefore": "1787723527",
+      "claimBefore": "1788328327",
+      "refundAfter": "1788328387"
+    }
+  },
+  "token": "0x0000000000000000000000000000000000000000",
+  "ecosystem": "evm",
+  "chainId": 31338
+}

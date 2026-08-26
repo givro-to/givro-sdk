@@ -13,6 +13,7 @@ describe("GivroPayClient.prepareEvmTransactions", () => {
 
   it("builds attested transactions when quote has attested fields", () => {
     const quote: PaymentQuote = {
+      protocolVersion: 1,
       paymentRef: ("0x" + "ab".repeat(32)) as `0x${string}`,
       amount: "1000000",
       token: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
@@ -38,6 +39,7 @@ describe("GivroPayClient.prepareEvmTransactions", () => {
 
   it("throws a readable error when attested order fields are incomplete", () => {
     const quote: PaymentQuote = {
+      protocolVersion: 1,
       paymentRef: ("0x" + "ab".repeat(32)) as `0x${string}`,
       amount: "1000000",
       token: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
@@ -81,6 +83,7 @@ describe("GivroPayClient.prepareEvmTransactions", () => {
 
   it("rejects legacy/basic EVM quotes on the default transaction builder", () => {
     const quote: PaymentQuote = {
+      protocolVersion: 1,
       paymentRef: ("0x" + "ab".repeat(32)) as `0x${string}`,
       amount: "1000000",
       token: "0x0000000000000000000000000000000000000000",
@@ -93,6 +96,7 @@ describe("GivroPayClient.prepareEvmTransactions", () => {
 
   it("rejects attested quotes when top-level token differs from order token", () => {
     const quote: PaymentQuote = {
+      protocolVersion: 1,
       paymentRef: ("0x" + "ab".repeat(32)) as `0x${string}`,
       amount: "1000000",
       token: "0x0000000000000000000000000000000000000000",
@@ -115,6 +119,7 @@ describe("GivroPayClient.prepareEvmTransactions", () => {
 
   it("rejects quotes that point at an untrusted settlement contract", () => {
     const quote: PaymentQuote = {
+      protocolVersion: 1,
       paymentRef: ("0x" + "ab".repeat(32)) as `0x${string}`,
       amount: "1000000",
       token: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
@@ -142,6 +147,7 @@ describe("GivroPayClient.prepareEvmTransactions", () => {
       trustedAttestedContracts: { "evm:11155111": [zero] },
     });
     const quote: PaymentQuote = {
+      protocolVersion: 1,
       paymentRef: ("0x" + "ab".repeat(32)) as `0x${string}`,
       amount: "1",
       token: zero,
@@ -165,6 +171,7 @@ describe("GivroPayClient.prepareEvmTransactions", () => {
 
   it("rejects top-level and on-chain order amount mismatches", () => {
     const quote: PaymentQuote = {
+      protocolVersion: 1,
       paymentRef: ("0x" + "ab".repeat(32)) as `0x${string}`,
       amount: "999999",
       token: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
@@ -272,6 +279,7 @@ describe("GivroPayClient.fetchQuote (Tron)", () => {
       },
     });
     const quote: PaymentQuote = {
+      protocolVersion: 1,
       paymentRef: ("0x" + "ab".repeat(32)) as `0x${string}`,
       amount: "1",
       token: "native",
@@ -299,6 +307,7 @@ describe("GivroPayClient.fetchQuote (Tron)", () => {
       trustedAttestedContracts: { "tron:728126428": [base58] },
     });
     const quote: PaymentQuote = {
+      protocolVersion: 1,
       paymentRef: ("0x" + "ab".repeat(32)) as `0x${string}`,
       amount: "1",
       token: "native",

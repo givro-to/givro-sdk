@@ -82,6 +82,40 @@ export interface PaymentQuote {
     refundAfter: bigint;
   };
 
+  // ── v2 intent-blinded (the rail the portal funds today) ───────────────────
+  /**
+   * Which escrow generation this quote is for. A v2 quote carries no usable
+   * `depositContract` or `attestedOrder`: its `attestedContract` names the v2
+   * escrow, whose ABI shares no deposit selector with v1.
+   */
+  protocolVersion: 1 | 2;
+  /** v2 settlement material. Present exactly when `protocolVersion` is 2. */
+  intentBlinded?: {
+    /** v2 escrow. Pin this at onboarding; do not adopt it from a quote at runtime. */
+    escrow: string;
+    /**
+     * `keccak256(abi.encode(mandateSigner, salt))`, or 32 zero bytes when the
+     * recipient has no wallet bound yet. Zero marks a vault that cannot settle
+     * unattended and must be claimed with the recipient's own signature.
+     */
+    mandateCommit: `0x${string}`;
+    order: {
+      chainId: bigint;
+      paymentRef: `0x${string}`;
+      intentId: `0x${string}`;
+      /** Fresh per intent; the escrow rejects one it has already seen. */
+      blindedBinding: `0x${string}`;
+      bindingEpoch: bigint;
+      /** 0 = LazyAttested (first-receipt), 1 = ZkRegistered. */
+      claimAuthorization: 0 | 1;
+      token: string;
+      amount: bigint;
+      cancelBefore: bigint;
+      claimBefore: bigint;
+      refundAfter: bigint;
+    };
+  };
+
   // ── Solana ────────────────────────────────────────────────────────────────
   /** Solana: program ID (base58). Required and independently pinned by the client. */
   programId?: string;

@@ -110,6 +110,54 @@ function parseQuoteBigInt(value: unknown, fieldName: string): bigint {
 }
 
 /** Normalize various JSON shapes into `PaymentQuote`. */
+/**
+ * Parse the v2 settlement material a v2 quote carries. The portal still returns
+ * the legacy `order` block alongside it for older readers, but on a v2 chain
+ * that block is not fundable: `attestedContract` points at the v2 escrow, which
+ * has no v1 selector and no fallback, so v1 calldata built from it reverts.
+ * `coercePaymentQuote` therefore refuses to derive the v1 fields from a v2
+ * quote at all -- a caller on the v1 path gets `undefined` and a thrown build
+ * error, rather than a transaction that only fails once broadcast.
+ */
+function coerceIntentBlinded(
+  raw: Record<string, unknown>,
+  ecosystem: ChainVm,
+  chainId: number | undefined,
+): PaymentQuote["intentBlinded"] | undefined {
+  const blob = raw.intentBlinded;
+  if (blob == null || typeof blob !== "object") return undefined;
+  const src = blob as Record<string, unknown>;
+  const escrow = typeof src.escrow === "string" ? src.escrow : "";
+  if (!escrow) throw new GivroPayQuoteError("intentBlinded.escrow is required");
+  const order = (src.order ?? {}) as Record<string, unknown>;
+  if (order.intentId == null || order.blindedBinding == null) {
+    throw new GivroPayQuoteError("intentBlinded.order missing intentId or blindedBinding");
+  }
+  const claimAuthorization = Number(order.claimAuthorization ?? 0);
+  if (claimAuthorization !== 0 && claimAuthorization !== 1) {
+    throw new GivroPayQuoteError("intentBlinded.order.claimAuthorization must be 0 or 1");
+  }
+  return {
+    escrow,
+    // Zero is legal and meaningful: it marks a vault that cannot settle
+    // unattended and must be claimed with the recipient's own signature.
+    mandateCommit: normalizeHex32(src.mandateCommit ?? `0x${"0".repeat(64)}`, "intentBlinded.mandateCommit"),
+    order: {
+      chainId: parseQuoteBigInt(order.chainId, "intentBlinded.order.chainId"),
+      paymentRef: normalizeHex32(order.paymentRef, "intentBlinded.order.paymentRef"),
+      intentId: normalizeHex32(order.intentId, "intentBlinded.order.intentId"),
+      blindedBinding: normalizeHex32(order.blindedBinding, "intentBlinded.order.blindedBinding"),
+      bindingEpoch: parseQuoteBigInt(order.bindingEpoch ?? "1", "intentBlinded.order.bindingEpoch"),
+      claimAuthorization: claimAuthorization as 0 | 1,
+      token: canonicalQuoteToken(ecosystem, String(order.token ?? ""), chainId),
+      amount: parseQuoteBigInt(order.amount, "intentBlinded.order.amount"),
+      cancelBefore: parseQuoteBigInt(order.cancelBefore, "intentBlinded.order.cancelBefore"),
+      claimBefore: parseQuoteBigInt(order.claimBefore, "intentBlinded.order.claimBefore"),
+      refundAfter: parseQuoteBigInt(order.refundAfter, "intentBlinded.order.refundAfter"),
+    },
+  };
+}
+
 export function coercePaymentQuote(raw: Record<string, unknown>): PaymentQuote {
   const paymentRef = (raw.paymentRef ?? raw.payment_ref) as string | undefined;
   if (!paymentRef || !isHex32(paymentRef)) {
@@ -134,14 +182,26 @@ export function coercePaymentQuote(raw: Record<string, unknown>): PaymentQuote {
   const rawToken = String(raw.token ?? order.token ?? "");
   if (!rawToken) throw new GivroPayQuoteError("missing token");
   const token = canonicalQuoteToken(ecosystem, rawToken, chainId);
+  const intentBlinded = coerceIntentBlinded(raw, ecosystem, chainId);
+  const declaredVersion = raw.protocolVersion != null ? Number(raw.protocolVersion) : undefined;
+  if (declaredVersion != null && declaredVersion !== 1 && declaredVersion !== 2) {
+    throw new GivroPayQuoteError(`unsupported protocolVersion ${String(raw.protocolVersion)}`);
+  }
+  const protocolVersion: 1 | 2 = intentBlinded || declaredVersion === 2 ? 2 : 1;
+  if (protocolVersion === 2 && !intentBlinded) {
+    throw new GivroPayQuoteError("quote declares protocolVersion 2 but carries no intentBlinded material");
+  }
+
   const dep = raw.depositContract ?? raw.deposit_contract ?? raw.attestedContract;
   const depositContract =
-    typeof dep === "string" && dep.startsWith("0x") ? (dep as `0x${string}`) : undefined;
+    protocolVersion === 1 && typeof dep === "string" && dep.startsWith("0x")
+      ? (dep as `0x${string}`)
+      : undefined;
   const attestedContractRaw = raw.attestedContract;
   const attestedContract =
     typeof attestedContractRaw === "string" && attestedContractRaw.length > 0 ? attestedContractRaw : undefined;
   let attestedOrder: PaymentQuote["attestedOrder"] | undefined;
-  if (attestedContract) {
+  if (attestedContract && protocolVersion === 1) {
     const hasOrderAmount = order.amount != null || order.amountWei != null;
     if (
       order.chainId == null
@@ -195,9 +255,11 @@ export function coercePaymentQuote(raw: Record<string, unknown>): PaymentQuote {
     token,
     ecosystem,
     chainId,
+    protocolVersion,
     depositContract,
     attestedContract,
     attestedOrder,
+    intentBlinded,
     programId,
     solanaOrder,
   };

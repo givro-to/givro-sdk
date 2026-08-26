@@ -138,6 +138,7 @@ export function buildEvmDepositRequest(params: {
 }
 
 /** Cancel a deposit within the cancelBefore window (payer only). Works with `HfiPayAttestedV1`. */
+/** Works on both rails: `cancelByPayer(bytes32)` is selector-identical in v2. */
 export function buildEvmCancelRequest(params: {
   depositContract: Address;
   paymentRef: Hex;
@@ -161,6 +162,10 @@ export type BindingMessage = {
 };
 
 /** Register an EVM address binding for an identifier hash. */
+/**
+ * v1 only. v2 replaces `bind` with `registerPayoutMandate`, signed over
+ * `PAYOUT_MANDATE_TYPES` in the `intentBlindedDomain`.
+ */
 export function buildEvmBindTx(params: {
   attestedContract: Address;
   message: BindingMessage;
@@ -180,6 +185,7 @@ export function buildEvmBindTx(params: {
 }
 
 /** Revoke a pending binding before it activates. */
+/** v1 only. v2's `revokePendingMandate` takes a different argument list. */
 export function buildEvmRevokePendingTx(params: {
   attestedContract: Address;
   idHash: Hex;
@@ -200,6 +206,13 @@ export function buildEvmRevokePendingTx(params: {
 }
 
 /** Claim a deposited payment (recipient calls after binding is active). */
+/**
+ * v1 only. The v2 escrow has no `claim(bytes32)`: v1 could resolve the
+ * recipient from an on-chain `idHash -> address` registry, and removing that
+ * registry is the point of v2. A v2 claim carries a per-payment recipient
+ * signature over `INTENT_CLAIM_TYPES`, orchestrated by the portal's
+ * `/api/intent/claim/v2/*` endpoints.
+ */
 export function buildEvmClaimTx(params: {
   attestedContract: Address;
   paymentRef: Hex;
@@ -217,6 +230,7 @@ export function buildEvmClaimTx(params: {
 }
 
 /** Refund an expired deposit back to the payer. */
+/** Works on both rails: `refund(bytes32)` is selector-identical in v2. */
 export function buildEvmRefundTx(params: {
   attestedContract: Address;
   paymentRef: Hex;
