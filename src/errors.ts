@@ -91,6 +91,11 @@ export class GivroEnterpriseApiError extends GivroPayError {
   readonly statusCode: number;
   readonly responseBody: unknown;
   readonly requestId?: string;
+  /**
+   * The server's stable error code (`invalid_api_key`, `rate_limited`, ...)
+   * when it sent one. Branch on this rather than on the message text.
+   */
+  readonly errorCode?: string;
 
   constructor(
     statusCode: number,
@@ -98,15 +103,26 @@ export class GivroEnterpriseApiError extends GivroPayError {
     options?: ErrorOptions & { requestId?: string },
   ) {
     const body = responseBody && typeof responseBody === "object" ? responseBody as Record<string, unknown> : undefined;
+    // The enterprise API nests its failures as `{ error: { code, message } }`.
+    // Reading only the string forms discarded both, leaving the caller with a
+    // bare "HTTP 401" while the server had already said `invalid_api_key`.
+    const nested = body?.error && typeof body.error === "object"
+      ? body.error as Record<string, unknown>
+      : undefined;
+    const errorCode = typeof nested?.code === "string" ? nested.code : undefined;
+    const nestedMessage = typeof nested?.message === "string" ? nested.message : undefined;
     const message = typeof body?.error === "string"
       ? body.error
-      : typeof body?.message === "string"
-        ? body.message
-        : `Givro Enterprise API returned HTTP ${statusCode}`;
+      : nestedMessage
+        ? errorCode ? `${errorCode}: ${nestedMessage}` : nestedMessage
+        : typeof body?.message === "string"
+          ? body.message
+          : `Givro Enterprise API returned HTTP ${statusCode}`;
     super("ENTERPRISE_API_ERROR", message, options);
     this.name = "GivroEnterpriseApiError";
     this.statusCode = statusCode;
     this.responseBody = responseBody;
     this.requestId = options?.requestId;
+    this.errorCode = errorCode;
   }
 }

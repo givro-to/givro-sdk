@@ -72,3 +72,24 @@ describe("GivroEnterpriseClient", () => {
     expect(new Headers(init.headers).get("X-API-Key")).toBe("gvr_live_secret");
   });
 });
+
+describe("enterprise API errors", () => {
+  it("surfaces the code and message the server actually sent", () => {
+    // Body captured verbatim from a running portal. The nested shape is what
+    // made the previous extraction fall through to a bare status line.
+    const err = new GivroEnterpriseApiError(401, {
+      request_id: "req_3f8b9d5d438025d2917c474196f41fc1",
+      error: { code: "invalid_api_key", message: "Invalid or missing API key" },
+    }, { requestId: "req_3f8b9d5d438025d2917c474196f41fc1" });
+    expect(err.errorCode).toBe("invalid_api_key");
+    expect(err.message).toContain("Invalid or missing API key");
+    expect(err.message).not.toBe("Givro Enterprise API returned HTTP 401");
+    expect(err.requestId).toBe("req_3f8b9d5d438025d2917c474196f41fc1");
+  });
+
+  it("still falls back when the server sends no structured error", () => {
+    const err = new GivroEnterpriseApiError(500, "gateway exploded");
+    expect(err.message).toBe("Givro Enterprise API returned HTTP 500");
+    expect(err.errorCode).toBeUndefined();
+  });
+});
