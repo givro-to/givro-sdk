@@ -64,4 +64,24 @@ describe("normalizeRecipient", () => {
     // phone values are opaque — returned as trimmed, case preserved
     expect(normalizeRecipient("phone", "+44 7700 900000")).toBe("+44 7700 900000");
   });
+
+  it("givro_id: strips a leading @ and lowercases, like an X handle", () => {
+    // The kind is inside the string the portal HMACs, so a normalization that
+    // differs from the portal's yields an idHash no binding matches.
+    expect(normalizeRecipient("givro_id", "  @Acme.Sales  ")).toBe("acme.sales");
+    expect(normalizeRecipient("givro_id", "ACME")).toBe("acme");
+  });
+
+  it("strips a run of @, the way the portal does", () => {
+    // One @ left `@@acme` as `@acme` here and `acme` at the portal — the same
+    // recipient in two canonical forms, which is what this function exists to
+    // prevent.
+    expect(normalizeRecipient("givro_id", "@@acme.sales")).toBe("acme.sales");
+    expect(normalizeRecipient("x", "@@alice")).toBe("alice");
+  });
+
+  it("givro_id: keeps the dot that separates a branch from its root", () => {
+    // acme.sales is one identifier, not an email-shaped thing to be rewritten.
+    expect(normalizeRecipient("givro_id", "acme.product_b")).toBe("acme.product_b");
+  });
 });

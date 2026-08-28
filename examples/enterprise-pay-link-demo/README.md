@@ -71,10 +71,17 @@ To have Givro email the payer instead, use:
 
 ## B. Run this demo
 
+The demo calls the Enterprise API through `givro-sdk` (the package it ships
+inside), so the SDK has to be built first:
+
 ```bash
+cd ../..            # givro-sdk root
+npm install && npm run build
+
 cd examples/enterprise-pay-link-demo
+npm install         # links givro-sdk from ../..
 cp .env.example .env
-# Edit .env: set GIVRO_API_KEY, the receiving email, chain/token, etc.
+# Edit .env: set GIVRO_API_KEY, the receiving identity, chain/token, etc.
 npm start
 # Open http://127.0.0.1:3847 in a browser
 ```
@@ -86,14 +93,16 @@ npm start
 | `GIVRO_API_KEY` | Enterprise API key (required) |
 | `GIVRO_API_BASE` | Defaults to `https://givro.to` |
 | `GIVRO_ENVIRONMENT` | `test` or `live`, must match the key |
-| `GIVRO_RECIPIENT_IDENTIFIER` | Recipient email / X handle (on-chain claims bind to this identity) |
+| `GIVRO_RECIPIENT_KIND` | `email`, `givro_id`, or `x` |
+| `GIVRO_RECIPIENT_IDENTIFIER` | Recipient email / Givro ID / X handle (on-chain claims bind to this identity) |
 | `GIVRO_CHAIN_ID` | Must match the key environment: test → 84532 (Base Sepolia), live → 8453 (Base) |
 | `GIVRO_TOKEN_SYMBOL` / `GIVRO_TOKEN_ADDRESS` | Token symbol (e.g. `ETH`/`USDC`) or contract address; the address wins |
 | `GIVRO_FEE_PAYER` | `payer` or `merchant` |
 
 **Notes:**
 
-- The key environment and `chain_id` must match (a test key cannot use a live Base mainnet asset config, and vice versa).
+- The key environment and `chain_id` must match (a test key cannot use a live Base mainnet asset config, and vice versa). Mismatching them is refused with `environment_chain_mismatch`.
+- `recipient_kind` may be `email`, `x`, or `givro_id`. A **Givro ID** is the name behind `givro.to/@acme.sales`; it has no mailbox of its own, which is what lets one verified email run several collection identities, each settling to its own wallets.
 - If creating a live key returns `approval_required`, finish the approval in the Dashboard before creating it.
 - The payer funds a Pay Link with on-chain assets **signed by their own wallet**; Givro never holds funds or debits anyone.
 
@@ -113,8 +122,34 @@ npm start
 
 | File | Purpose |
 |------|---------|
-| `server.mjs` | Local HTTP: static page + proxy to the Enterprise API (the key never reaches the browser) |
+| `server.mjs` | Local HTTP: static page + `GivroEnterpriseClient` calls (the key never reaches the browser) |
 | `public/index.html` | Simulated merchant checkout UI |
 | `.env.example` | Environment variable template |
 
-No third-party npm dependencies; Node 18+ is all you need.
+Its only dependency is `givro-sdk` itself, resolved from `../..`; Node 18+ is all you need.
+
+---
+
+## E. End-to-end test
+
+`tests/e2e/enterprisePayLink.e2e.test.ts` in the SDK repo spawns this demo as
+its own process and drives it against a running portal: it creates pay links,
+fetches each one back the way a payer's browser resolves it, and checks
+idempotency and error passthrough. It skips unless the environment is set.
+
+```bash
+# 1. seed an organization and a test API key in the local portal
+docker exec hfi-api-local npx tsx /app/scripts/seed-enterprise-api-key.ts
+
+# 2. run with the key it printed
+cd ../..
+GIVRO_E2E_PORTAL_URL=http://127.0.0.1:3001 \
+GIVRO_E2E_ENTERPRISE_API_KEY=gvr_test_… \
+GIVRO_E2E_CHAIN_ID=31338 \
+GIVRO_E2E_TOKEN_ADDRESS=0xbded0d2bf404bdcba897a74e6657f1f12e5c6fb6 \
+npx vitest run tests/e2e/enterprisePayLink.e2e.test.ts
+```
+
+`GIVRO_E2E_TOKEN_ADDRESS` is optional; without it the suite asks for `USDC` by
+symbol instead. The demo's own `.env` is ignored — the suite sets every variable
+explicitly, so a `.env` holding a production key is never used.

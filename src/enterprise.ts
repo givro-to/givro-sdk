@@ -15,23 +15,58 @@ export type EnterpriseEcosystem = "evm" | "tron";
 export type EnterpriseSettlementMode = "simulated" | "mainnet";
 export type EnterpriseFeePayer = "merchant" | "payer";
 
+/**
+ * Who collects the payment.
+ *
+ * `givro_id` is a name Givro issued to one business line (givro.to/@acme.sales).
+ * A line identified by one has no mailbox, which is the point: a one-person
+ * company can run several collection identities off a single verified email.
+ */
+export type EnterpriseRecipientKind = "email" | "x" | "givro_id";
+
+/**
+ * Which asset the link is denominated in. Exactly one form, because the portal
+ * resolves a symbol against the chain's registry and takes an address verbatim
+ * — and a chain whose registry does not carry the symbol can only be reached by
+ * address.
+ */
+export type EnterpriseTokenSelector =
+  /** Resolved by Givro for `chainId`, e.g. `ETH` or `USDC`. */
+  | { token_symbol: string; token_address?: never }
+  /** Exact contract address; the zero address for native ETH, `native` for TRX. */
+  | { token_address: string; token_symbol?: never };
+
 /** Input accepted by `POST /api/payment-links`. Amount is the server's display amount string. */
-export interface CreatePaymentLinkParams {
+export interface CreatePaymentLinkBase {
   recipient: string;
-  recipient_kind: "email" | "x";
+  recipient_kind: EnterpriseRecipientKind;
   amount: string;
   ecosystem: EnterpriseEcosystem;
   chainId: number;
-  token_symbol: string;
   settlement_mode?: EnterpriseSettlementMode;
   fee_payer?: EnterpriseFeePayer;
   merchant_ref?: string;
+  /**
+   * How long the link stays payable, in seconds from creation. Omitted leaves
+   * the portal's default lifetime in place.
+   *
+   * A duration, not a deadline: the portal reads `expires_in_seconds` and
+   * computes the timestamp itself. An absolute `expires_at` is not a field it
+   * knows, so one would be dropped without a word and the link would quietly
+   * carry the default lifetime instead of the one the merchant set.
+   *
+   * Accepted range is 300 (5 minutes) to 7_776_000 (90 days); outside it the
+   * portal refuses with `invalid_request`.
+   */
+  expires_in_seconds?: number;
   message?: string;
 }
 
-export interface CreateEmailPaymentLinkParams extends CreatePaymentLinkParams {
+export type CreatePaymentLinkParams = CreatePaymentLinkBase & EnterpriseTokenSelector;
+
+export type CreateEmailPaymentLinkParams = CreatePaymentLinkParams & {
   payer_email: string;
-}
+};
 
 export interface PaymentLinkResponse {
   payment_link_id: string;
@@ -39,10 +74,10 @@ export interface PaymentLinkResponse {
   payment_link: Record<string, unknown>;
 }
 
-export interface EmailPaymentLinkBatchItem extends CreateEmailPaymentLinkParams {
+export type EmailPaymentLinkBatchItem = CreateEmailPaymentLinkParams & {
   /** Unique per item; exact retries must retain the same value and request body. */
   idempotency_key: string;
-}
+};
 
 export interface EmailPaymentLinkBatchResponse {
   ok: boolean;

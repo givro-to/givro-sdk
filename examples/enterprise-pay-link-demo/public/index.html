@@ -109,6 +109,7 @@
       word-break: break-all;
     }
     ol.steps { color: var(--muted); line-height: 1.55; padding-left: 1.2rem; }
+    .hint { color: var(--muted); font-size: 0.78rem; margin-top: 6px; min-height: 1em; }
     ol.steps strong { color: var(--text); }
   </style>
 </head>
@@ -141,11 +142,13 @@
           <div>
             <label for="recipient_identifier">Recipient (merchant receiving identity)</label>
             <input id="recipient_identifier" name="recipient_identifier" placeholder="merchant@example.com" required />
+            <div id="recipientHint" class="hint"></div>
           </div>
           <div>
             <label for="recipient_kind">Identifier kind</label>
             <select id="recipient_kind" name="recipient_kind">
               <option value="email">email</option>
+              <option value="givro_id">Givro ID</option>
               <option value="x">x handle</option>
             </select>
           </div>
@@ -278,6 +281,22 @@
 
     chainSelect.addEventListener("change", () => populateTokens());
 
+    // A Givro ID is a name Givro issued to one business line; it has no mailbox,
+    // which is exactly why a one-person company can collect under several.
+    const RECIPIENT_HINTS = {
+      email: ["merchant@example.com", "A verified member email of the organization."],
+      givro_id: ["acme.sales", "A Givro ID — the name behind givro.to/@acme.sales. No mailbox needed."],
+      x: ["acmepay", "An X handle, without the @."],
+    };
+
+    function applyRecipientKind() {
+      const [placeholder, hint] = RECIPIENT_HINTS[$("recipient_kind").value] || RECIPIENT_HINTS.email;
+      $("recipient_identifier").placeholder = placeholder;
+      $("recipientHint").textContent = hint;
+    }
+
+    $("recipient_kind").addEventListener("change", applyRecipientKind);
+
     async function loadConfig() {
       const res = await fetch("/api/config");
       const data = await res.json();
@@ -286,6 +305,7 @@
       $("amount").value = d.amount || "1.00";
       $("recipient_identifier").value = d.recipient_identifier || "";
       $("recipient_kind").value = d.recipient_kind || "email";
+      applyRecipientKind();
       $("fee_payer").value = d.fee_payer || "payer";
       $("message").value = d.message || "";
       keyBadge.textContent = data.has_api_key

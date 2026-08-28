@@ -8,6 +8,9 @@
     "start": "node server.mjs",
     "dev": "node server.mjs"
   },
+  "dependencies": {
+    "givro-sdk": "file:../.."
+  },
   "engines": {
     "node": ">=18"
   }

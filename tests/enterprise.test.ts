@@ -93,3 +93,56 @@ describe("enterprise API errors", () => {
     expect(err.errorCode).toBeUndefined();
   });
 });
+
+describe("payment link inputs the portal accepts", () => {
+  it("creates a link for a business line addressed by a Givro ID", async () => {
+    // The portal has accepted `givro_id` since business lines shipped; the SDK
+    // typed recipient_kind as email|x, so the one merchant shape that needs no
+    // mailbox could not be expressed at all.
+    const fetchImpl = vi.fn().mockResolvedValue(response(200, link));
+    const client = createGivroEnterpriseClient({ apiKey: "gvr_test_secret", fetchImpl });
+
+    await client.createPaymentLink({
+      recipient: "acme.sales",
+      recipient_kind: "givro_id",
+      amount: "10.00",
+      ecosystem: "evm",
+      chainId: 84532,
+      token_symbol: "USDC",
+    }, "invoice_2001_v1");
+
+    const [, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toMatchObject({
+      recipient: "acme.sales",
+      recipient_kind: "givro_id",
+    });
+  });
+
+  it("denominates a link by token address, not only by symbol", async () => {
+    // Symbol resolution runs against the chain's registry. A chain that does
+    // not carry the symbol is reachable only by address, and the SDK had no
+    // field for one — so those merchants had no way through it.
+    const fetchImpl = vi.fn().mockResolvedValue(response(200, link));
+    const client = createGivroEnterpriseClient({ apiKey: "gvr_test_secret", fetchImpl });
+
+    await client.createPaymentLink({
+      recipient: "merchant@example.com",
+      recipient_kind: "email",
+      amount: "1.00",
+      ecosystem: "evm",
+      chainId: 84532,
+      token_address: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+      // A duration, not a deadline. The portal reads `expires_in_seconds` and
+      // knows no `expires_at`, so sending one set no expiry at all — the link
+      // silently carried the default lifetime and nothing said so.
+      expires_in_seconds: 3600,
+    }, "invoice_2002_v1");
+
+    const [, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(String(init.body));
+    expect(body.token_address).toBe("0x036CbD53842c5426634e7929541eC2318f3dCF7e");
+    expect(body.expires_in_seconds).toBe(3600);
+    expect("expires_at" in body).toBe(false);
+    expect("token_symbol" in body).toBe(false);
+  });
+});

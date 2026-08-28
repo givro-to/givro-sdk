@@ -137,6 +137,30 @@ identical request body. Test keys create simulated Payment Links; live keys
 create mainnet links. The server is authoritative for the key's environment,
 enabled chain/token pairs, and payment-link fields.
 
+`recipient_kind` is `email`, `x`, or `givro_id`. A **Givro ID** is the name
+behind `givro.to/@acme.sales` — an identifier Givro issued to one business
+line. It has no mailbox of its own, which is the point: one verified email can
+run several collection identities, each settling to its own wallets.
+
+Denominate the link either by `token_symbol`, which Givro resolves against the
+chain's registry, or by `token_address` — exactly one. A chain whose registry
+does not carry the symbol is reachable only by address.
+
+```typescript
+await enterprise.createPaymentLink({
+  recipient: "acme.sales",
+  recipient_kind: "givro_id",
+  amount: "10.00",
+  ecosystem: "evm",
+  chainId: 8453,
+  token_address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+}, "invoice_1002_v1");
+```
+
+A worked example is in `examples/enterprise-pay-link-demo` — a merchant
+checkout built on this client, with an end-to-end suite that runs it against a
+live portal.
+
 ## Quick start — EVM (viem / wagmi)
 
 EVM native symbols are resolved together with `chainId` and fail closed: for

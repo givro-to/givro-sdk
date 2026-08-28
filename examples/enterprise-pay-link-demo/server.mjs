@@ -3,8 +3,17 @@
  *
  * Flow:
  *  1. Browser clicks "Pay" → POST /api/create-pay-link (this server)
- *  2. This server calls Givro: POST /api/payment-links
+ *  2. This server calls Givro through the SDK: POST /api/payment-links
  *  3. Response includes pay_url → UI shows link; payer opens it and pays with wallet
+ *
+ * The Enterprise API is reached through `givro-sdk` rather than raw fetch. When
+ * this demo was written the SDK had no server-side client, so it hand-rolled
+ * one — and the two drifted: the demo learned that the portal keys tokens by
+ * address, and the SDK never did. A demo that does not use the package it ships
+ * inside cannot catch that again.
+ *
+ * The API key stays in this process. It is never returned by /api/config and
+ * never reaches the browser.
  *
  * Env: copy .env.example → .env (or export vars in the shell).
  */
@@ -14,6 +23,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID, createHmac, timingSafeEqual } from "node:crypto";
+import {
+  createGivroEnterpriseClient,
+  fetchPublicSupportedAssets,
+  GivroEnterpriseApiError,
+} from "givro-sdk";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, "public");
@@ -45,6 +59,12 @@ const PORT = Number(process.env.PORT || 3847);
 const API_BASE = (process.env.GIVRO_API_BASE || "https://givro.to").replace(/\/+$/, "");
 const API_KEY = (process.env.GIVRO_API_KEY || "").trim();
 const ENVIRONMENT = (process.env.GIVRO_ENVIRONMENT || "test").trim() === "live" ? "live" : "test";
+
+/** Server-side only. Constructed once; the key never leaves this process. */
+const givro = API_KEY ? createGivroEnterpriseClient({ apiKey: API_KEY, baseUrl: API_BASE }) : null;
+
+/** The identifier kinds a pay link can collect under. */
+const RECIPIENT_KINDS = new Set(["email", "x", "givro_id"]);
 
 function defaultsFromEnv() {
   return {
@@ -111,10 +131,9 @@ async function readJsonBody(req) {
 let assetsCache = { at: 0, data: null };
 const ASSETS_CACHE_MS = 5 * 60_000;
 
-async function fetchJson(url, headers) {
-  const res = await fetch(url, headers ? { headers } : undefined);
-  const json = await res.json().catch(() => null);
-  return res.ok ? json : null;
+/** Either source may be unavailable; a missing one degrades the list, not the page. */
+async function orNull(promise) {
+  return promise.then((value) => value, () => null);
 }
 
 async function fetchSupportedAssets() {
@@ -122,8 +141,8 @@ async function fetchSupportedAssets() {
   if (assetsCache.data && now - assetsCache.at < ASSETS_CACHE_MS) return assetsCache.data;
 
   const [registry, enterprise] = await Promise.all([
-    fetchJson(`${API_BASE}/api/public/supported-assets`),
-    API_KEY ? fetchJson(`${API_BASE}/api/enterprise/v1/supported_assets`, { "X-API-Key": API_KEY }) : null,
+    orNull(fetchPublicSupportedAssets(API_BASE)),
+    givro ? orNull(givro.getSupportedAssets()) : null,
   ]);
 
   // Pay links take a numeric chain_id, so only evm/tron registry chains apply.
@@ -179,7 +198,7 @@ async function fetchSupportedAssets() {
 }
 
 async function createEnterprisePayLink(input) {
-  if (!API_KEY) {
+  if (!givro) {
     const err = new Error("GIVRO_API_KEY is not set. Copy .env.example to .env and paste your Enterprise API key.");
     err.status = 500;
     err.code = "missing_api_key";
@@ -193,58 +212,66 @@ async function createEnterprisePayLink(input) {
     tokenAddress = defaults.token_address;
     tokenSymbol = defaults.token_symbol;
   }
-  const body = {
-    environment: input.environment || defaults.environment,
-    recipient_kind: input.recipient_kind || defaults.recipient_kind,
-    recipient_identifier: String(input.recipient_identifier || defaults.recipient_identifier).trim(),
-    amount: String(input.amount || defaults.amount).trim(),
-    ecosystem: input.ecosystem || defaults.ecosystem,
-    chain_id: Number(input.chain_id ?? defaults.chain_id),
-    // Address wins when both are present; token_symbol is resolved server-side by Givro.
-    ...(tokenAddress ? { token_address: tokenAddress } : { token_symbol: tokenSymbol }),
-    fee_payer: input.fee_payer || defaults.fee_payer,
-    merchant_ref: String(input.merchant_ref || `demo_${Date.now()}`).slice(0, 128),
-    message: String(input.message || defaults.message).slice(0, 280),
-  };
-
-  if (!body.recipient_identifier) {
-    const err = new Error("recipient_identifier is required (merchant receiving email or X handle)");
+  const recipientKind = String(input.recipient_kind || defaults.recipient_kind).trim();
+  if (!RECIPIENT_KINDS.has(recipientKind)) {
+    const err = new Error(`recipient_kind must be one of ${[...RECIPIENT_KINDS].join(", ")}`);
+    err.status = 400;
+    throw err;
+  }
+  const recipient = String(input.recipient_identifier || defaults.recipient_identifier).trim();
+  if (!recipient) {
+    const err = new Error("recipient_identifier is required (merchant receiving email, X handle, or Givro ID)");
     err.status = 400;
     throw err;
   }
 
-  const idempotencyKey = String(input.idempotency_key || `demo_${body.merchant_ref}_${randomUUID()}`).slice(0, 160);
-  const endpoint = `${API_BASE}/api/payment-links`;
-
-  const res = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-API-Key": API_KEY,
-      "Idempotency-Key": idempotencyKey,
-    },
-    body: JSON.stringify(body),
-  });
-
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const message = typeof json.error === "object"
-      ? (json.error.message || JSON.stringify(json.error))
-      : (json.error || json.message || `Givro API failed with HTTP ${res.status}`);
-    const err = new Error(message);
-    err.status = res.status;
-    err.details = json;
-    throw err;
-  }
-
-  return {
-    ok: true,
-    pay_url: json.pay_url,
-    payment_link: json.payment_link,
-    payment_link_id: json.payment_link_id,
-    request_sent: body,
-    idempotency_key: idempotencyKey,
+  const merchantRef = String(input.merchant_ref || `demo_${Date.now()}`).slice(0, 128);
+  const params = {
+    recipient,
+    recipient_kind: recipientKind,
+    amount: String(input.amount || defaults.amount).trim(),
+    ecosystem: input.ecosystem || defaults.ecosystem,
+    chainId: Number(input.chain_id ?? defaults.chain_id),
+    // Exactly one: the portal resolves a symbol against the chain's registry
+    // and takes an address verbatim, so a chain whose registry does not carry
+    // the symbol is reachable only by address.
+    ...(tokenAddress ? { token_address: tokenAddress } : { token_symbol: tokenSymbol }),
+    fee_payer: input.fee_payer || defaults.fee_payer,
+    merchant_ref: merchantRef,
+    message: String(input.message || defaults.message).slice(0, 280),
+    // A duration, not a deadline — see CreatePaymentLinkBase. Omitted leaves
+    // the portal's default lifetime in place.
+    ...(input.expires_in_seconds === undefined
+      ? {}
+      : { expires_in_seconds: Number(input.expires_in_seconds) }),
   };
+
+  // Owned by the caller, never derived from the body: two payers buying the
+  // same thing for the same amount must not collapse into one payment link.
+  const idempotencyKey = String(input.idempotency_key || `demo_${merchantRef}_${randomUUID()}`).slice(0, 160);
+
+  try {
+    const json = await givro.createPaymentLink(params, idempotencyKey);
+    return {
+      ok: true,
+      pay_url: json.pay_url,
+      payment_link: json.payment_link,
+      payment_link_id: json.payment_link_id,
+      request_sent: params,
+      idempotency_key: idempotencyKey,
+    };
+  } catch (error) {
+    if (error instanceof GivroEnterpriseApiError) {
+      // The portal's own code and message — "environment_chain_mismatch" says
+      // far more than "HTTP 400", and the SDK already extracted it.
+      const err = new Error(error.message);
+      err.status = error.statusCode;
+      err.code = error.errorCode;
+      err.details = { request_id: error.requestId, body: error.responseBody };
+      throw err;
+    }
+    throw error;
+  }
 }
 
 const server = http.createServer(async (req, res) => {

@@ -1,4 +1,9 @@
-export type RecipientKind = "email" | "phone" | "x";
+/**
+ * `givro_id` is a name Givro issued to one enterprise business line
+ * (givro.to/@acme.sales). It has no mailbox of its own, so it is never a
+ * delivery address — only an identifier the escrow routes by.
+ */
+export type RecipientKind = "email" | "phone" | "x" | "givro_id";
 
 export function normalizeEmail(email: string): string {
   const trimmed = email.trim().toLowerCase();
@@ -26,6 +31,13 @@ export function normalizeEmail(email: string): string {
 export function normalizeRecipient(kind: RecipientKind, raw: string): string {
   const t = raw.trim();
   if (kind === "email") return t.includes("@") ? normalizeEmail(t) : t.toLowerCase();
-  if (kind === "x") return t.replace(/^@/, "").toLowerCase();
+  // The kind is part of the string the portal HMACs into an idHash, so these
+  // rules must match it exactly: a different normalization here produces an
+  // idHash no binding matches, and the payment funds an escrow nobody can claim.
+  //
+  // `@+`, not `@`: the portal strips a run of them, so stripping one left
+  // `@@acme` as `@acme` here and `acme` there — the same recipient in two
+  // canonical forms, which is the one thing this function exists to prevent.
+  if (kind === "x" || kind === "givro_id") return t.replace(/^@+/, "").toLowerCase();
   return t;
 }
