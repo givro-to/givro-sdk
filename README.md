@@ -126,6 +126,7 @@ const link = await enterprise.createAndEmailPaymentLink({
   token_symbol: "USDC",
   settlement_mode: "mainnet",
   merchant_ref: "invoice_1001",
+  return_url: "https://shop.example.com/order/invoice_1001",
 }, "invoice_1001_v1");
 
 // Persist link.payment_link_id and reconcile final settlement from signed webhooks.
@@ -156,6 +157,25 @@ await enterprise.createPaymentLink({
   token_address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
 }, "invoice_1002_v1");
 ```
+
+Verify inbound webhooks with the same helper the demo uses — do not hand-roll
+the HMAC. The portal signs `HMAC-SHA256(secret, "<t>.<raw body>")` and sends
+`Givro-Signature: t=<unix-seconds>,v1=<hex>`:
+
+```typescript
+import { verifyEnterpriseWebhookSignature } from "givro-sdk";
+
+if (!verifyEnterpriseWebhookSignature({
+  secret: process.env.GIVRO_WEBHOOK_SECRET!,
+  header: req.headers["givro-signature"] ?? "",
+  rawBody,
+})) {
+  throw new Error("invalid Givro-Signature");
+}
+```
+
+`getSupportedAssets()` returns the key's environment: EVM rows in `chains`,
+Tron rows in `tron_networks`. Do not treat `chains` as the full catalog.
 
 A worked example is in `examples/enterprise-pay-link-demo` — a merchant
 checkout built on this client, with an end-to-end suite that runs it against a

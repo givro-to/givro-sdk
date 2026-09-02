@@ -1,13 +1,28 @@
-# Enterprise Pay Link Demo (minimal merchant checkout)
+# Enterprise Pay Link Demo (merchant checkout)
 
-Simulates: a merchant site clicks **Pay** → calls the Givro Enterprise API to create a **Pay Link** → the payer opens the link → pays on Givro with their own wallet.
+A small storefront that takes an order, sends the buyer to Givro to pay, and
+lets the **webhook** — not the browser — decide when the order is paid.
 
 ```
-Merchant demo (this app)
-  → POST /api/payment-links  (X-API-Key)
-  → pay_url  (https://givro.to/send?...&paymentRequestId=...)
-  → Payer opens link, connects wallet, funds payment
+  [ storefront ]  buyer picks items, presses Pay
+        |
+        |  POST /api/orders          order created locally, status=awaiting_payment
+        |  POST /api/payment-links   merchant_ref = the order id
+        v
+  [ pay page ]    givro.to/pay/business/epr_...      (opens in its own tab)
+        |                                            buyer pays with their wallet
+        |  POST /webhook  payment.funded → payment.claimed   (signed)
+        v
+  [ order page ]  /order/<id>   polls, flips to Paid when the webhook lands
 ```
+
+The join between the two systems is one field: **`merchant_ref`**. The merchant
+puts its own order id there at creation, and every webhook arrives carrying it.
+
+**The browser is never the source of truth.** A buyer who closes the tab, loses
+their connection, or never comes back is still a buyer who paid — the webhook
+says so and the order updates regardless. `return_url` (below) is a courtesy for
+the buyer who *does* come back, not a signal that anything was paid.
 
 ---
 
@@ -23,7 +38,20 @@ Merchant demo (this app)
    - Any label works, e.g. `pay-link-demo`
    - Scopes must include at least `payments:write` and `payments:read`
    - The full key (`gvr_test_...` or `gvr_live_...`) is **shown only once** after creation → copy and store it immediately
-5. (Optional) Configure a webhook for events like `payment.funded` / `payment.claimed`; this demo does not depend on webhooks.
+5. Open the **Webhooks** tab and add an endpoint pointing at this demo's
+   `POST /webhook`. **Required** — without it nothing ever moves an order off
+   `awaiting_payment`. Copy the signing secret (`whsec_...`) it gives you.
+
+   Givro only delivers to a **public `https://` endpoint on port 443** — no
+   localhost, no private IPs. While developing, put a tunnel in front:
+
+   ```bash
+   ngrok http 3847
+   ```
+
+   Register `https://<your-tunnel>/webhook` as the endpoint, and set the same
+   origin as `GIVRO_PUBLIC_ORIGIN` in `.env` so pay links can carry a
+   `return_url` back to the order page.
 
 ### Related HTTP calls (the Dashboard uses a session internally; registering through the page is enough)
 
@@ -33,30 +61,24 @@ Merchant demo (this app)
 | Verify registration | POST | `/api/enterprise/register/verify` `{ name, email, code }` |
 | Create API key | POST | `/api/enterprise/api-keys` (needs login cookie + `X-HFI-CSRF: 1`) |
 
-Server-side API call (used by this demo):
+Server-side call this demo makes (through `givro-sdk`, not raw `fetch`):
 
-```http
-POST https://givro.to/api/payment-links
-X-API-Key: gvr_test_...
-Idempotency-Key: <unique-per-business-attempt>
-Content-Type: application/json
+```javascript
+await givro.createPaymentLink({
+  recipient: "merchant@example.com",
+  recipient_kind: "email",          // email | x | givro_id
+  amount: "1.00",
+  ecosystem: "evm",
+  chainId: 84532,                   // camelCase — the portal also accepts chain_id
+  token_symbol: "ETH",              // or token_address, exactly one
+  fee_payer: "payer",
+  merchant_ref: "invoice_1001",
+  return_url: "https://shop.example.com/order/invoice_1001",
+  message: "Demo invoice",
+}, "invoice_1001_v1");
 ```
 
-```json
-{
-  "recipient_kind": "email",
-  "recipient_identifier": "merchant@example.com",
-  "amount": "1.00",
-  "ecosystem": "evm",
-  "chain_id": 84532,
-  "token_symbol": "ETH",
-  "fee_payer": "payer",
-  "merchant_ref": "invoice_1001",
-  "message": "Demo invoice"
-}
-```
-
-The token can be passed as `token_symbol` (e.g. `ETH` / `USDC`, resolved by Givro for the chain) or as `token_address` (an exact contract address). Provide either one; the address wins when both are present. The environment comes from the API key, so no `environment` field is needed in the body.
+The token is `token_symbol` (resolved by Givro for the chain) or `token_address` (an exact contract). Provide either one; the address wins when both are present. The environment comes from the API key, so no `environment` field is needed in the body. The portal accepts `recipient_identifier` / `chain_id` as aliases; the SDK types the canonical `recipient` / `chainId`.
 
 A successful response includes:
 
@@ -95,9 +117,11 @@ npm start
 | `GIVRO_ENVIRONMENT` | `test` or `live`, must match the key |
 | `GIVRO_RECIPIENT_KIND` | `email`, `givro_id`, or `x` |
 | `GIVRO_RECIPIENT_IDENTIFIER` | Recipient email / Givro ID / X handle (on-chain claims bind to this identity) |
-| `GIVRO_CHAIN_ID` | Must match the key environment: test → 84532 (Base Sepolia), live → 8453 (Base) |
-| `GIVRO_TOKEN_SYMBOL` / `GIVRO_TOKEN_ADDRESS` | Token symbol (e.g. `ETH`/`USDC`) or contract address; the address wins |
+| `GIVRO_CHAIN_ID` | Must be a chain the key's environment actually bills on — **ask, don't guess**: `curl localhost:3847/api/supported-assets` lists exactly what this key accepts. Different portal deployments open different testnets |
+| `GIVRO_TOKEN_SYMBOL` / `GIVRO_TOKEN_ADDRESS` | Token symbol (e.g. `ETH`/`USDC`) or contract address; the address wins. This is the storefront's currency, so a stablecoin makes the prices read naturally |
 | `GIVRO_FEE_PAYER` | `payer` or `merchant` |
+| `GIVRO_WEBHOOK_SECRET` | `whsec_...` from Dashboard → Webhooks. **Required** for orders to update; without it the demo logs events but marks them unverified |
+| `GIVRO_PUBLIC_ORIGIN` | Public https origin this demo is reachable on (your tunnel URL). Used to build each pay link's `return_url`. Empty, `http://`, or an unparseable value are ignored — the order still creates, the link simply carries no return URL |
 
 **Notes:**
 
@@ -108,13 +132,89 @@ npm start
 
 ---
 
-## C. Using the page
+## C. Using the demo
 
-1. Confirm the badge shows `API key ready`.
-2. Adjust the amount / recipient identity.
-3. Click **Pay / Create Pay Link**.
-4. Click **Open Pay Link** (or copy the `pay_url`).
-5. On the Givro `/send` page, connect the wallet, confirm the parameters, and complete funding.
+1. Open `http://127.0.0.1:3847`. Pick some items — prices are computed on the
+   server, never taken from the browser.
+2. Press **Pay**. The pay page opens in a new tab; this tab becomes
+   `/order/<id>` and starts polling.
+3. Pay on the Givro page (or, with a test key, press one of the **sandbox
+   scenario** buttons at the bottom of the order page to drive the lifecycle
+   without a wallet).
+4. Watch the order page flip to **Paid** on its own. The event timeline below it
+   is the webhooks arriving.
+
+Scenario buttons and the events each one produces:
+
+| scenario | events |
+|---|---|
+| `success` | `payment.funded` → `payment.claimed` |
+| `failure` | `payment.failed`; the link stays payable, so the order stays `awaiting_payment` and the buyer can retry |
+| `cancelled` | `payment.cancelled` |
+| `unclaimed_refund` | `payment.funded` → `payment.expired` → `payment.refund_pending` → `payment.refunded` |
+
+Each link allows 20 simulation attempts.
+
+### What the webhook receiver does
+
+`POST /webhook` in `server.mjs` is a full worked example, not a stub:
+
+- **Verifies `Givro-Signature` through `verifyEnterpriseWebhookSignature`**
+  (`t=<unix>,v1=<hex>` of `HMAC-SHA256(secret, "<t>.<raw body>")`) against the
+  raw body, inside a ±300-second window, before trusting a single field. The
+  helper lives in `givro-sdk` so this demo cannot drift from the algorithm the
+  portal actually signs.
+- **Reconciles idempotently by event id.** Givro retries until it gets a 2xx, so
+  the same event arrives more than once as a matter of course. Applying it twice
+  is the merchant's bug, not Givro's.
+- **Never walks an order backwards.** Statuses are ranked, so a `funded` that
+  overtakes a `claimed` in flight cannot un-pay the order.
+- **Answers 200 quickly.** Anything else and the event is redelivered on the
+  retry schedule.
+
+### Where the payment fields live in the payload
+
+The delivered body wraps the event's own identity around a `data` object:
+
+```jsonc
+{
+  "id": "evt_...",              // event identity — top level
+  "type": "payment.claimed",
+  "created_at": 1788382591,
+  "object_id": "epr_test_...",
+  "data": {                     // everything about the payment link
+    "payment_link_id": "epr_test_...",
+    "merchant_ref": "ord_...",  // ← your order id
+    "current_status": "paid",   // sandbox simulation sets this
+    "payment_link": { "status": "paid" }  // live settlement sets this
+  }
+}
+```
+
+Reading `payment_link_id` or `current_status` off the top level silently yields
+`undefined`, and an order that never updates. Live settlement events omit
+`current_status`; take `data.payment_link.status` or map `payload.type`.
+
+## C2. Sending the buyer back (`return_url`)
+
+Pay links accept an optional `return_url`. The pay page renders it as a button
+the buyer chooses to press — showing the host it leads to — once the link
+reaches a terminal state:
+
+```json
+{ "return_url": "https://shop.example.com/order/ord_123" }
+```
+
+It must be an absolute `https://` URL, at most 2048 characters, with no embedded
+credentials; anything else is refused with `invalid_request`. It is deliberately
+**not** an automatic redirect: a pay page that navigated on its own would be an
+open redirector wearing Givro's domain, and would push the buyer off a
+settlement record they may still want to read.
+
+Treat it as navigation only. A browser arriving at your `return_url` proves that
+a browser arrived — nothing about whether money moved. The webhook is the only
+account of that, which is why this demo's order page shows the status the
+webhook set rather than anything the returning URL claims.
 
 ---
 
@@ -122,11 +222,18 @@ npm start
 
 | File | Purpose |
 |------|---------|
-| `server.mjs` | Local HTTP: static page + `GivroEnterpriseClient` calls (the key never reaches the browser) |
-| `public/index.html` | Simulated merchant checkout UI |
+| `server.mjs` | The merchant: catalog, order store, `GivroEnterpriseClient` calls, and the signed webhook receiver (the key never reaches the browser) |
+| `public/index.html` | Storefront and checkout |
+| `public/order.html` | Order status page — polls, and shows the webhook timeline |
 | `.env.example` | Environment variable template |
 
-Its only dependency is `givro-sdk` itself, resolved from `../..`; Node 18+ is all you need.
+Orders live in memory, so a server restart clears them. A real merchant puts
+them in its own database; nothing else about the flow changes.
+
+Its only application dependency is `givro-sdk` itself, resolved from `../..`.
+Build the SDK first (`npm install && npm run build` at the package root): the
+root barrel currently loads EVM/Solana helpers, so those peer packages must
+be installed there even though this demo never calls them. Node 18+ after that.
 
 ---
 

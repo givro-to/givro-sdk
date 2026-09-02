@@ -1,7 +1,9 @@
+import { createHmac } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import {
   createGivroEnterpriseClient,
   GivroEnterpriseApiError,
+  verifyEnterpriseWebhookSignature,
 } from "../src/index.js";
 
 function response(status: number, body: unknown, requestId = "req_test"): Response {
@@ -60,6 +62,18 @@ describe("GivroEnterpriseClient", () => {
       requestId: "req_test",
     } satisfies Partial<GivroEnterpriseApiError>);
     expect(fetchImpl).toHaveBeenCalledOnce();
+  });
+
+  it("reads supported_assets as EVM chains plus a sibling tron_networks list", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(response(200, {
+      environment: "test",
+      chains: [{ chain_id: 84532, name: "Base Sepolia", assets: ["ETH"], tokens: [] }],
+      tron_networks: [{ network: "nile", chain_id: 3448148188, name: "Tron Nile", assets: ["TRX"], tokens: [] }],
+    }));
+    const client = createGivroEnterpriseClient({ apiKey: "gvr_test_secret", fetchImpl });
+    const catalog = await client.getSupportedAssets();
+    expect(fetchImpl.mock.calls[0]?.[0]).toBe("https://givro.to/api/enterprise/v1/supported_assets");
+    expect(catalog.tron_networks[0]?.network).toBe("nile");
   });
 
   it("uses the authenticated Enterprise registry and serializes list filters", async () => {
@@ -144,5 +158,47 @@ describe("payment link inputs the portal accepts", () => {
     expect(body.expires_in_seconds).toBe(3600);
     expect("expires_at" in body).toBe(false);
     expect("token_symbol" in body).toBe(false);
+  });
+});
+
+describe("verifyEnterpriseWebhookSignature", () => {
+  const secret = "whsec_test";
+  const rawBody = JSON.stringify({ id: "evt_1", type: "payment.claimed", data: { merchant_ref: "ord_1" } });
+
+  function headerFor(body: string, timestamp: number, secretValue = secret): string {
+    const digest = createHmac("sha256", secretValue).update(`${timestamp}.${body}`).digest("hex");
+    return `t=${timestamp},v1=${digest}`;
+  }
+
+  it("accepts a fresh signature over the raw body", () => {
+    const nowSec = 1_700_000_000;
+    expect(verifyEnterpriseWebhookSignature({
+      secret,
+      header: headerFor(rawBody, nowSec),
+      rawBody,
+      nowSec,
+    })).toBe(true);
+  });
+
+  it("refuses a stale timestamp, a wrong secret, and a malformed v1 without throwing", () => {
+    const nowSec = 1_700_000_000;
+    expect(verifyEnterpriseWebhookSignature({
+      secret,
+      header: headerFor(rawBody, nowSec - 301),
+      rawBody,
+      nowSec,
+    })).toBe(false);
+    expect(verifyEnterpriseWebhookSignature({
+      secret: "whsec_other",
+      header: headerFor(rawBody, nowSec),
+      rawBody,
+      nowSec,
+    })).toBe(false);
+    expect(verifyEnterpriseWebhookSignature({
+      secret,
+      header: `t=${nowSec},v1=not-hex-at-all`,
+      rawBody,
+      nowSec,
+    })).toBe(false);
   });
 });

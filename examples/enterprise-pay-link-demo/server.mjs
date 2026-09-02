@@ -22,21 +22,21 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { randomUUID, createHmac, timingSafeEqual } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import {
   createGivroEnterpriseClient,
   fetchPublicSupportedAssets,
   GivroEnterpriseApiError,
+  verifyEnterpriseWebhookSignature,
 } from "givro-sdk";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, "public");
 
-function loadDotEnv() {
-  const envPath = path.join(__dirname, ".env");
-  if (!fs.existsSync(envPath)) return;
-  const text = fs.readFileSync(envPath, "utf8");
-  for (const line of text.split("\n")) {
+function parseEnvFile(envPath) {
+  if (!fs.existsSync(envPath)) return {};
+  const parsed = {};
+  for (const line of fs.readFileSync(envPath, "utf8").split("\n")) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("#")) continue;
     const eq = trimmed.indexOf("=");
@@ -49,6 +49,20 @@ function loadDotEnv() {
     ) {
       value = value.slice(1, -1);
     }
+    parsed[key] = value;
+  }
+  return parsed;
+}
+
+function loadDotEnv() {
+  // `.env.local` wins over `.env` so a laptop can point at the local portal
+  // without rewriting the production key file. The process environment still
+  // wins over both — that is how the e2e suite keeps a production `.env` inert.
+  const merged = {
+    ...parseEnvFile(path.join(__dirname, ".env")),
+    ...parseEnvFile(path.join(__dirname, ".env.local")),
+  };
+  for (const [key, value] of Object.entries(merged)) {
     if (!(key in process.env)) process.env[key] = value;
   }
 }
@@ -59,6 +73,36 @@ const PORT = Number(process.env.PORT || 3847);
 const API_BASE = (process.env.GIVRO_API_BASE || "https://givro.to").replace(/\/+$/, "");
 const API_KEY = (process.env.GIVRO_API_KEY || "").trim();
 const ENVIRONMENT = (process.env.GIVRO_ENVIRONMENT || "test").trim() === "live" ? "live" : "test";
+// Origin used to build the pay link's return_url. Public hosts must be
+// https://. Loopback http:// is the exception the portal now accepts, so a
+// checkout on this machine can send the payer back without a tunnel.
+function isLoopbackHost(hostname) {
+  const host = String(hostname || "").toLowerCase().replace(/^\[|\]$/g, "");
+  return host === "localhost" || host === "127.0.0.1" || host === "::1";
+}
+
+function merchantOrigin(raw) {
+  const trimmed = String(raw || "").trim().replace(/\/+$/, "");
+  if (!trimmed) return "";
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol === "https:") return trimmed;
+    if (url.protocol === "http:" && isLoopbackHost(url.hostname)) return trimmed;
+    return "";
+  } catch {
+    return "";
+  }
+}
+
+function defaultLoopbackOrigin() {
+  try {
+    return isLoopbackHost(new URL(API_BASE).hostname) ? `http://127.0.0.1:${PORT}` : "";
+  } catch {
+    return "";
+  }
+}
+
+const PUBLIC_ORIGIN = merchantOrigin(process.env.GIVRO_PUBLIC_ORIGIN) || defaultLoopbackOrigin();
 
 /** Server-side only. Constructed once; the key never leaves this process. */
 const givro = API_KEY ? createGivroEnterpriseClient({ apiKey: API_KEY, baseUrl: API_BASE }) : null;
@@ -176,16 +220,41 @@ async function fetchSupportedAssets() {
       });
     }
   }
+  // Tron is not folded into `chains` — the portal reports it alongside so
+  // callers that treat that array as EVM-only keep working. A demo that
+  // ignored `tron_networks` could never offer Nile to a test key.
+  if (enterprise && Array.isArray(enterprise.tron_networks)) {
+    for (const network of enterprise.tron_networks) {
+      if (!Number.isInteger(network.chain_id)) continue;
+      if (chains.some((c) => c.chainId === network.chain_id)) continue;
+      const registryChain = registryByChainId.get(network.chain_id);
+      const tokens = Array.isArray(network.tokens) && network.tokens.length > 0
+        ? network.tokens.map((token) => ({
+            symbol: token.symbol,
+            address: token.address,
+            contract: token.address,
+            decimals: token.decimals,
+            ...(token.native === true ? { native: true } : {}),
+          }))
+        : (registryChain?.tokens ?? []);
+      chains.push({
+        ecosystem: "tron",
+        chainId: network.chain_id,
+        label: network.name || registryChain?.label || `Tron ${network.network || network.chain_id}`,
+        tokens,
+      });
+    }
+  }
+
   // The enterprise list is authoritative for what this key's environment
   // accepts (/api/payment-links rejects other chain_ids with
-  // environment_chain_mismatch). Registry chains are only added when they
-  // can actually be used: all of them when no key is configured, and tron
-  // mainnet alongside a live key. A test key gets testnet chains only.
-  const enterpriseListed = chains.length > 0;
+  // environment_chain_mismatch). Registry chains are only added when no
+  // key is configured — otherwise a public mainnet Tron row would appear
+  // next to a test key and fail at create.
+  const enterpriseListed = Boolean(enterprise && (Array.isArray(enterprise.chains) || Array.isArray(enterprise.tron_networks)));
   for (const chain of registryChains) {
     if (chains.some((c) => c.chainId === chain.chainId)) continue;
-    if (!enterpriseListed) { chains.push(chain); continue; }
-    if (chain.ecosystem === "tron" && ENVIRONMENT === "live") chains.push(chain);
+    if (!enterpriseListed) chains.push(chain);
   }
 
   if (chains.length === 0) {
@@ -238,6 +307,10 @@ async function createEnterprisePayLink(input) {
     ...(tokenAddress ? { token_address: tokenAddress } : { token_symbol: tokenSymbol }),
     fee_payer: input.fee_payer || defaults.fee_payer,
     merchant_ref: merchantRef,
+    // Where the pay page offers to send the payer once they are done. An
+    // offer, not a proof: the browser coming back says nothing about whether
+    // the payment settled, which is what the webhook is for.
+    ...(input.return_url ? { return_url: String(input.return_url) } : {}),
     message: String(input.message || defaults.message).slice(0, 280),
     // A duration, not a deadline — see CreatePaymentLinkBase. Omitted leaves
     // the portal's default lifetime in place.
@@ -274,7 +347,195 @@ async function createEnterprisePayLink(input) {
   }
 }
 
-const server = http.createServer(async (req, res) => {
+// ---------------------------------------------------------------------------
+// The store.
+//
+// Prices live here, never in the browser: a checkout that bills whatever the
+// page posted is the oldest bug in e-commerce. The order is created first and
+// its id becomes the pay link's `merchant_ref`, which is what the webhook
+// arrives holding — that one field is the whole join between Givro's payment
+// and this merchant's order.
+// ---------------------------------------------------------------------------
+
+const CATALOG = [
+  { sku: "beans",   name: "Single-Origin Beans",  note: "Ethiopia Yirgacheffe, 340g", price: "18.00", art: "\u2615" },
+  { sku: "grinder", name: "Hand Grinder",         note: "Conical burr, 40 clicks",    price: "45.00", art: "\u2699\ufe0f" },
+  { sku: "kettle",  name: "Pour-Over Kettle",     note: "Gooseneck, 0.9L",            price: "62.00", art: "\ud83e\uded6" },
+];
+
+/** Demo-scale storage. A real merchant puts these in its own database. */
+const orders = new Map();
+const ordersByPaymentLink = new Map();
+
+/** Cents, so a three-item order does not drift the way floats do. */
+function priceCents(decimal) {
+  const [whole, frac = ""] = String(decimal).split(".");
+  return Number(whole) * 100 + Number((frac + "00").slice(0, 2));
+}
+
+function formatCents(cents) {
+  return `${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, "0")}`;
+}
+
+// A webhook may be retried, and two events may overtake each other in flight.
+// Ranking the statuses lets a late `funded` land after `paid` without walking
+// the order backwards.
+const ORDER_STATUS_RANK = {
+  awaiting_payment: 0,
+  funded: 1,
+  paid: 2,
+  expired: 2,
+  cancelled: 2,
+  refund_pending: 3,
+  refunded: 4,
+};
+
+const EVENT_STATUS = {
+  "payment.funded": "funded",
+  "payment.claimed": "paid",
+  "payment.expired": "expired",
+  "payment.cancelled": "cancelled",
+  // `payment.failed` deliberately maps to nothing. A failed attempt leaves the
+  // link payable, so the order stays awaiting payment and the buyer can try
+  // again — a declined card does not cancel an order either. It still shows in
+  // the timeline, because every event does.
+  "payment.refund_pending": "refund_pending",
+  "payment.refunded": "refunded",
+};
+
+const HOSTED_STATUS = {
+  paid: "paid",
+  claimed: "paid",
+  refunded: "refunded",
+  expired: "expired",
+  cancelled: "cancelled",
+  disabled: "cancelled",
+};
+
+/**
+ * Local webhooks cannot reach 127.0.0.1 from the portal container (SSRF
+ * denylist). The merchant pattern is still the signed webhook; this read is
+ * only so a laptop checkout can walk the return button without a tunnel.
+ */
+async function refreshOrderFromHosted(order) {
+  if (!givro || !order.payment_link_id) return order;
+  try {
+    const res = await fetch(`${API_BASE}/api/hosted-payment-links/${order.payment_link_id}`);
+    const json = await res.json().catch(() => ({}));
+    const link = json.payment_link && typeof json.payment_link === "object" ? json.payment_link : null;
+    if (!link) return order;
+    const mapped = HOSTED_STATUS[String(link.status || "").toLowerCase()] || "";
+    if (mapped && (ORDER_STATUS_RANK[mapped] ?? -1) > (ORDER_STATUS_RANK[order.status] ?? -1)) {
+      order.status = mapped;
+    }
+  } catch {
+    /* webhook remains the account of payment */
+  }
+  return order;
+}
+
+function publicOrder(order) {
+  return {
+    order_id: order.order_id,
+    status: order.status,
+    created_at: order.created_at,
+    items: order.items,
+    total: order.total,
+    currency: order.currency,
+    pay_url: order.pay_url,
+    payment_link_id: order.payment_link_id,
+    events: order.events,
+    can_simulate: ENVIRONMENT === "test",
+  };
+}
+
+/** Fold one verified webhook into the order it names. Idempotent by event id. */
+function applyWebhookToOrder(payload, data, verified) {
+  const ref = String(data.merchant_ref ?? "");
+  const linkId = String(data.payment_link_id ?? payload.object_id ?? "");
+  const order = orders.get(ref) ?? ordersByPaymentLink.get(linkId);
+  if (!order) return null;
+
+  const eventId = String(payload.id ?? "");
+  // Givro retries until it gets a 2xx, so the same event id arrives more than
+  // once as a matter of course. Reconciling twice is the merchant's bug.
+  if (eventId && order.seenEventIds.has(eventId)) return { order, duplicate: true };
+  if (eventId) order.seenEventIds.add(eventId);
+
+  const type = String(payload.type ?? "");
+  // The event type is what happened, and it wins. The link's status is only
+  // where the link ended up, and the two disagree exactly where it matters: a
+  // failed attempt leaves the link "active", which is not a thing an order can
+  // be. Sandbox events set `current_status`; live settlement events put the
+  // same fact on `payment_link.status` — either serves as the fallback for an
+  // event type this merchant does not model.
+  const next = EVENT_STATUS[type]
+    ?? String(data.current_status ?? data.payment_link?.status ?? "");
+  order.events.push({
+    id: eventId || null,
+    type: type || "unknown",
+    status: next || null,
+    at: Number(payload.created_at) || Math.floor(Date.now() / 1000),
+    verified,
+  });
+  if (next && (ORDER_STATUS_RANK[next] ?? -1) > (ORDER_STATUS_RANK[order.status] ?? -1)) {
+    order.status = next;
+  }
+  return { order, duplicate: false };
+}
+
+async function createOrder(input) {
+  const requested = Array.isArray(input.items) ? input.items : [];
+  const items = [];
+  let totalCents = 0;
+  for (const line of requested) {
+    const product = CATALOG.find((c) => c.sku === String(line.sku ?? ""));
+    const quantity = Math.floor(Number(line.quantity ?? 0));
+    if (!product || !Number.isInteger(quantity) || quantity < 1 || quantity > 99) continue;
+    const lineCents = priceCents(product.price) * quantity;
+    totalCents += lineCents;
+    items.push({ sku: product.sku, name: product.name, quantity, unit_price: product.price, line_total: formatCents(lineCents) });
+  }
+  if (items.length === 0) {
+    const err = new Error("cart is empty");
+    err.status = 400;
+    throw err;
+  }
+
+  const defaults = defaultsFromEnv();
+  const orderId = `ord_${randomUUID().replace(/-/g, "").slice(0, 20)}`;
+  const total = formatCents(totalCents);
+
+  const link = await createEnterprisePayLink({
+    amount: total,
+    merchant_ref: orderId,
+    message: `Order ${orderId}`,
+    // Only when this process has a public https origin the portal will accept.
+    // http://127.0.0.1 is dropped above so the order still creates.
+    ...(PUBLIC_ORIGIN ? { return_url: `${PUBLIC_ORIGIN}/order/${orderId}` } : {}),
+    // A checkout that stays open for the portal's default lifetime is a
+    // checkout whose price is stale. Thirty minutes is a cart, not an invoice.
+    expires_in_seconds: 1800,
+  });
+
+  const order = {
+    order_id: orderId,
+    status: "awaiting_payment",
+    created_at: Math.floor(Date.now() / 1000),
+    items,
+    total,
+    currency: defaults.token_symbol || "tokens",
+    pay_url: link.pay_url,
+    payment_link_id: link.payment_link_id,
+    events: [],
+    seenEventIds: new Set(),
+  };
+  orders.set(orderId, order);
+  ordersByPaymentLink.set(link.payment_link_id, order);
+  return order;
+}
+
+async function handleRequest(req, res) {
   const url = new URL(req.url || "/", "http://localhost");
 
   if (req.method === "GET" && url.pathname === "/api/config") {
@@ -312,25 +573,30 @@ const server = http.createServer(async (req, res) => {
     for await (const chunk of req) chunks.push(chunk);
     const rawBody = Buffer.concat(chunks).toString("utf8");
     const secret = (process.env.GIVRO_WEBHOOK_SECRET || "").trim();
-    const header = String(req.headers["givro-signature"] || "");
-    let verified = false;
-    if (secret && header) {
-      const parts = Object.fromEntries(header.split(",").map((p) => p.split("=")));
-      const timestamp = Number(parts.t);
-      const expected = createHmac("sha256", secret).update(`${parts.t}.${rawBody}`).digest("hex");
-      const given = String(parts.v1 || "");
-      verified = Number.isFinite(timestamp)
-        && Math.abs(Math.floor(Date.now() / 1000) - timestamp) <= 300
-        && given.length === expected.length
-        && timingSafeEqual(Buffer.from(given, "hex"), Buffer.from(expected, "hex"));
-    }
+    const header = String(req.headers["givro-signature"] || req.headers["x-givro-signature"] || "");
+    // Same helper the SDK ships: HMAC of "<t>.<raw body>", hex v1, ±300s.
+    // Hand-rolling this here is how the demo and the SDK last drifted.
+    const verified = secret
+      ? verifyEnterpriseWebhookSignature({ secret, header, rawBody })
+      : false;
     let payload = {};
     try { payload = JSON.parse(rawBody); } catch { /* keep raw log below */ }
-    console.log(`[webhook] ${verified ? "VERIFIED" : (secret ? "SIGNATURE MISMATCH" : "UNVERIFIED (set GIVRO_WEBHOOK_SECRET)")} id=${payload.id ?? "?"} type=${payload.type ?? "?"} payment_link_id=${payload.payment_link_id ?? "?"} status=${payload.current_status ?? payload.payment_link?.status ?? "?"}`);
+    // Envelope: { id, type, api_version, environment, created_at, object_type,
+    // object_id, request_id, data }. Everything about the payment link lives
+    // in `data` — only the event's own identity is at the top level.
+    const data = payload.data && typeof payload.data === "object" ? payload.data : {};
+    console.log(`[webhook] ${verified ? "VERIFIED" : (secret ? "SIGNATURE MISMATCH" : "UNVERIFIED (set GIVRO_WEBHOOK_SECRET)")} id=${payload.id ?? "?"} type=${payload.type ?? "?"} payment_link_id=${data.payment_link_id ?? payload.object_id ?? "?"} status=${data.current_status ?? data.payment_link?.status ?? "?"}`);
     if (secret && !verified) {
       sendJson(res, 400, { ok: false, error: "signature verification failed" });
       return;
     }
+    // Only a verified event may move an order. Without a secret configured the
+    // demo still reconciles so the flow can be seen end to end, and says so.
+    const applied = applyWebhookToOrder(payload, data, verified);
+    if (applied) {
+      console.log(`[order] ${applied.order.order_id} -> ${applied.order.status}${applied.duplicate ? " (duplicate event ignored)" : ""}`);
+    }
+    // 200 stops the retry schedule. Anything else and Givro redelivers.
     sendJson(res, 200, { ok: true });
     return;
   }
@@ -351,13 +617,94 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && url.pathname === "/api/catalog") {
+    const d = defaultsFromEnv();
+    sendJson(res, 200, { ok: true, currency: d.token_symbol || "tokens", products: CATALOG });
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/orders") {
+    try {
+      const order = await createOrder(await readJsonBody(req));
+      sendJson(res, 200, { ok: true, ...publicOrder(order) });
+    } catch (error) {
+      sendJson(res, Number.isInteger(error.status) ? error.status : 500, {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+        code: error.code,
+        details: error.details,
+      });
+    }
+    return;
+  }
+
+  const orderMatch = url.pathname.match(/^\/api\/orders\/([A-Za-z0-9_]+)$/);
+  if (req.method === "GET" && orderMatch) {
+    const order = orders.get(orderMatch[1]);
+    if (!order) {
+      sendJson(res, 404, { ok: false, error: "order not found" });
+      return;
+    }
+    await refreshOrderFromHosted(order);
+    sendJson(res, 200, { ok: true, ...publicOrder(order) });
+    return;
+  }
+
+  // Test-environment convenience: drives the portal's sandbox simulator so the
+  // whole lifecycle can be walked without a wallet. Sandbox links carry
+  // settlement_mode=simulated, which is what makes this endpoint (rather than
+  // the API-key-authenticated simulate-paid) the one that applies.
+  const simulateMatch = url.pathname.match(/^\/api\/orders\/([A-Za-z0-9_]+)\/simulate$/);
+  if (req.method === "POST" && simulateMatch) {
+    const order = orders.get(simulateMatch[1]);
+    if (!order) {
+      sendJson(res, 404, { ok: false, error: "order not found" });
+      return;
+    }
+    if (ENVIRONMENT !== "test") {
+      sendJson(res, 403, { ok: false, error: "simulation is only available with a test API key" });
+      return;
+    }
+    try {
+      const body = await readJsonBody(req);
+      const scenario = String(body.scenario || "success");
+      const response = await fetch(`${API_BASE}/api/hosted-payment-links/${order.payment_link_id}/simulate`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": `${order.order_id}-${scenario}-${Date.now()}`,
+        },
+        body: JSON.stringify({ scenario }),
+      });
+      const json = await response.json().catch(() => ({}));
+      sendJson(res, response.status, json);
+    } catch (error) {
+      sendJson(res, 502, { ok: false, error: error instanceof Error ? error.message : String(error) });
+    }
+    return;
+  }
+
   if (req.method === "GET") {
+    // /order/<id> is a page, not a file. The id stays in the URL so the buyer
+    // can come back to it — the only way back, until pay links carry a
+    // return_url the payer's browser can follow home.
+    if (/^\/order\/[A-Za-z0-9_]+$/.test(url.pathname)) {
+      req.url = "/order.html";
+    }
     serveStatic(req, res);
     return;
   }
 
   res.writeHead(405, { "Content-Type": "text/plain; charset=utf-8" });
   res.end("Method not allowed");
+}
+
+const server = http.createServer((req, res) => {
+  handleRequest(req, res).catch((error) => {
+    console.error("[server] unhandled request error", error);
+    if (res.headersSent) res.end();
+    else sendJson(res, 500, { ok: false, error: "internal error" });
+  });
 });
 
 server.listen(PORT, () => {
@@ -367,5 +714,6 @@ server.listen(PORT, () => {
   console.log(`  api   ${API_BASE}`);
   console.log(`  env   ${ENVIRONMENT}`);
   console.log(`  key   ${API_KEY ? "set" : "MISSING — set GIVRO_API_KEY in .env"}`);
+  console.log(`  back  ${PUBLIC_ORIGIN ? `${PUBLIC_ORIGIN}/order/<id>` : "no return_url (set GIVRO_PUBLIC_ORIGIN to a public https origin)"}`);
   console.log("");
 });

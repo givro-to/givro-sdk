@@ -217,6 +217,48 @@ describeLive("the enterprise pay-link demo, running on the SDK", () => {
     expect(expiresAt).toBeLessThanOrEqual(before + 660);
   });
 
+  it("carries the merchant's return_url through to what the payer's browser reads", async () => {
+    // The payer's only way back: the pay page has no other knowledge of where
+    // the checkout lives. A return_url that is accepted but not stored would
+    // strand every payer on the pay page with a paid order and no way home.
+    const returnUrl = `https://shop.example.com/order/e2e_${Date.now()}?src=givro`;
+    const { status, body } = await createPayLink({
+      amount: "5.00",
+      recipient_identifier: "merchant@example.com",
+      recipient_kind: "email",
+      chain_id: CHAIN_ID,
+      ecosystem: "evm",
+      ...(TOKEN_ADDRESS ? { token_address: TOKEN_ADDRESS } : { token_symbol: "USDC" }),
+      merchant_ref: `e2e_return_${Date.now()}`,
+      return_url: returnUrl,
+    });
+
+    expect(status, JSON.stringify(body)).toBe(200);
+    const resolved = await resolvePayLink(body.payment_link_id);
+    expect(resolved.payment_link.return_url).toBe(returnUrl);
+  });
+
+  it("refuses a return_url that would make the pay page an open redirector", async () => {
+    // The pay page renders this as a link on Givro's own domain. http:// would
+    // leak the order id off the payer's network, and a javascript: URL would
+    // run in the pay page's origin — both are refused at creation rather than
+    // filtered at render, so a stored URL is always safe to render.
+    for (const bad of ["http://shop.example.com/o/1", "javascript:alert(1)", "/order/1"]) {
+      const { status, body } = await createPayLink({
+        amount: "5.00",
+        recipient_identifier: "merchant@example.com",
+        recipient_kind: "email",
+        chain_id: CHAIN_ID,
+        ecosystem: "evm",
+        ...(TOKEN_ADDRESS ? { token_address: TOKEN_ADDRESS } : { token_symbol: "USDC" }),
+        merchant_ref: `e2e_badreturn_${Date.now()}`,
+        return_url: bad,
+      });
+      expect(status, `${bad} was accepted: ${JSON.stringify(body)}`).toBeGreaterThanOrEqual(400);
+      expect(String(body.error)).toContain("return_url");
+    }
+  });
+
   it("returns the same link for a repeated idempotency key", async () => {
     const request = {
       amount: "4.00",

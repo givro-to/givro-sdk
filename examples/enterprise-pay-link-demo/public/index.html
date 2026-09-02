@@ -1,386 +1,257 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Givro Enterprise Pay Link Demo</title>
-  <style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Bean &amp; Bridge — Checkout</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f6f5f2;
+    --surface: #ffffff;
+    --text: #1a1a19;
+    --muted: #6b6b66;
+    --line: #e3e1db;
+    --accent: #1a1a19;
+    --accent-text: #ffffff;
+    --ok: #157347;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
     :root {
-      color-scheme: light dark;
-      --bg: #0b1220;
-      --card: #121a2b;
-      --text: #e8eefc;
-      --muted: #9aaccb;
-      --accent: #3d8bfd;
-      --accent-2: #22c55e;
-      --danger: #f87171;
-      --border: #243049;
-      --input: #0f172a;
-      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      --bg: #131311; --surface: #1c1c1a; --text: #ece9e3; --muted: #9a978f;
+      --line: #2e2e2b; --accent: #ece9e3; --accent-text: #131311; --ok: #4ade80;
     }
-    body {
-      margin: 0;
-      min-height: 100vh;
-      background:
-        radial-gradient(900px 400px at 10% -10%, #1d4ed833, transparent),
-        radial-gradient(700px 360px at 100% 0%, #0ea5e933, transparent),
-        var(--bg);
-      color: var(--text);
-    }
-    main {
-      max-width: 720px;
-      margin: 0 auto;
-      padding: 40px 20px 80px;
-    }
-    h1 { font-size: 1.6rem; margin: 0 0 8px; }
-    p.lead { color: var(--muted); margin: 0 0 28px; line-height: 1.5; }
-    .card {
-      background: color-mix(in srgb, var(--card) 92%, black);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 20px;
-      box-shadow: 0 20px 50px #00000040;
-    }
-    .row { display: grid; gap: 12px; margin-bottom: 12px; }
-    @media (min-width: 640px) {
-      .row.two { grid-template-columns: 1fr 1fr; }
-    }
-    label { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 6px; }
-    input, select, textarea {
-      width: 100%;
-      box-sizing: border-box;
-      border-radius: 10px;
-      border: 1px solid var(--border);
-      background: var(--input);
-      color: var(--text);
-      padding: 10px 12px;
-      font: inherit;
-    }
-    textarea { min-height: 72px; resize: vertical; }
-    .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
-    button {
-      border: 0;
-      border-radius: 999px;
-      padding: 12px 20px;
-      font: inherit;
-      font-weight: 700;
-      cursor: pointer;
-    }
-    button.primary {
-      background: linear-gradient(135deg, var(--accent), #6366f1);
-      color: white;
-    }
-    button.primary:disabled { opacity: 0.55; cursor: not-allowed; }
-    button.secondary {
-      background: transparent;
-      color: var(--text);
-      border: 1px solid var(--border);
-    }
-    .status {
-      margin-top: 18px;
-      padding: 14px;
-      border-radius: 12px;
-      border: 1px solid var(--border);
-      background: #0b1324;
-      white-space: pre-wrap;
-      word-break: break-word;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      font-size: 0.85rem;
-      line-height: 1.45;
-    }
-    .status.error { border-color: #7f1d1d; color: #fecaca; }
-    .status.ok { border-color: #14532d; color: #bbf7d0; }
-    .badge {
-      display: inline-block;
-      font-size: 0.75rem;
-      padding: 3px 8px;
-      border-radius: 999px;
-      border: 1px solid var(--border);
-      color: var(--muted);
-      margin-bottom: 12px;
-    }
-    .badge.ready { color: #86efac; border-color: #166534; }
-    .badge.missing { color: #fca5a5; border-color: #7f1d1d; }
-    a.pay {
-      display: inline-block;
-      margin-top: 12px;
-      color: #93c5fd;
-      font-weight: 700;
-      word-break: break-all;
-    }
-    ol.steps { color: var(--muted); line-height: 1.55; padding-left: 1.2rem; }
-    .hint { color: var(--muted); font-size: 0.78rem; margin-top: 6px; min-height: 1em; }
-    ol.steps strong { color: var(--text); }
-  </style>
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); }
+  header {
+    border-bottom: 1px solid var(--line);
+    background: var(--surface);
+    position: sticky; top: 0; z-index: 5;
+  }
+  header .inner {
+    max-width: 940px; margin: 0 auto; padding: 18px 20px;
+    display: flex; align-items: baseline; gap: 12px;
+  }
+  .wordmark { font-size: 1.05rem; font-weight: 620; letter-spacing: -0.01em; }
+  .tag { font-size: 0.78rem; color: var(--muted); }
+  main { max-width: 940px; margin: 0 auto; padding: 32px 20px 80px; }
+  h1 { font-size: 1.5rem; font-weight: 620; letter-spacing: -0.02em; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 28px; font-size: 0.92rem; }
+  .layout { display: grid; grid-template-columns: 1fr 320px; gap: 28px; align-items: start; }
+  @media (max-width: 800px) { .layout { grid-template-columns: 1fr; } }
+
+  .product {
+    display: flex; gap: 16px; align-items: center;
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 12px; padding: 16px; margin-bottom: 12px;
+  }
+  .art {
+    width: 56px; height: 56px; flex: none; border-radius: 10px;
+    background: var(--bg); border: 1px solid var(--line);
+    display: grid; place-items: center; font-size: 1.6rem;
+  }
+  .product .body { flex: 1; min-width: 0; }
+  .product .name { font-weight: 560; }
+  .product .note { color: var(--muted); font-size: 0.84rem; margin-top: 2px; }
+  .product .price { font-variant-numeric: tabular-nums; font-size: 0.92rem; margin-top: 6px; }
+
+  .stepper { display: flex; align-items: center; gap: 2px; }
+  .stepper button {
+    width: 30px; height: 30px; border: 1px solid var(--line); background: var(--surface);
+    color: var(--text); border-radius: 8px; cursor: pointer; font-size: 1rem; line-height: 1;
+  }
+  .stepper button:hover { border-color: var(--muted); }
+  .stepper .qty { width: 34px; text-align: center; font-variant-numeric: tabular-nums; font-size: 0.95rem; }
+
+  .summary {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 12px; padding: 20px; position: sticky; top: 88px;
+  }
+  .summary h2 { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0 0 14px; font-weight: 560; }
+  .line { display: flex; justify-content: space-between; gap: 12px; font-size: 0.9rem; padding: 6px 0; }
+  .line .qtyname { color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .line .amt { font-variant-numeric: tabular-nums; flex: none; }
+  .total { display: flex; justify-content: space-between; border-top: 1px solid var(--line); margin-top: 12px; padding-top: 14px; font-weight: 620; }
+  .total .amt { font-variant-numeric: tabular-nums; }
+  .empty { color: var(--muted); font-size: 0.88rem; padding: 6px 0 2px; }
+
+  button.pay {
+    width: 100%; margin-top: 18px; padding: 12px 16px;
+    background: var(--accent); color: var(--accent-text);
+    border: 0; border-radius: 10px; font-size: 0.95rem; font-weight: 560; cursor: pointer;
+  }
+  button.pay:disabled { opacity: 0.4; cursor: not-allowed; }
+  .hint { color: var(--muted); font-size: 0.78rem; margin-top: 10px; line-height: 1.5; }
+  .err {
+    margin-top: 14px; padding: 10px 12px; border-radius: 8px; font-size: 0.85rem;
+    background: color-mix(in srgb, #dc2626 12%, transparent);
+    border: 1px solid color-mix(in srgb, #dc2626 40%, transparent);
+    white-space: pre-wrap; word-break: break-word;
+  }
+  footer { max-width: 940px; margin: 0 auto; padding: 0 20px 40px; color: var(--muted); font-size: 0.78rem; }
+</style>
 </head>
 <body>
-  <main>
-    <h1>Merchant Checkout Demo</h1>
-    <p class="lead">
-      Clicking “Pay” makes this demo create a parameter-locked Pay Link via the Enterprise API.
-      The payer opens the link and pays with their own wallet on Givro (non-custodial, no auto-debit).
-    </p>
+<header>
+  <div class="inner">
+    <span class="wordmark">Bean &amp; Bridge</span>
+    <span class="tag">Coffee, shipped Tuesdays</span>
+  </div>
+</header>
 
-    <div id="keyBadge" class="badge">checking API key…</div>
+<main>
+  <h1>Your order</h1>
+  <p class="sub">Pick what you want, then pay with any wallet. No account, no card.</p>
 
-    <section class="card">
-      <form id="payForm">
-        <div class="row two">
-          <div>
-            <label for="amount">Amount</label>
-            <input id="amount" name="amount" required />
-          </div>
-          <div>
-            <label for="fee_payer">Fee paid by</label>
-            <select id="fee_payer" name="fee_payer">
-              <option value="payer">payer (payer covers the fee)</option>
-              <option value="merchant">merchant (merchant covers the fee)</option>
-            </select>
-          </div>
+  <div class="layout">
+    <section id="products" aria-label="Products"></section>
+
+    <aside class="summary">
+      <h2>Order summary</h2>
+      <div id="lines"><div class="empty">Nothing selected yet.</div></div>
+      <div class="total"><span>Total</span><span class="amt" id="total">0.00</span></div>
+      <button class="pay" id="payBtn" disabled>Pay</button>
+      <p class="hint" id="hint">Prices are calculated on the server.</p>
+      <div class="err" id="err" hidden></div>
+    </aside>
+  </div>
+</main>
+
+<footer>Merchant Checkout Demo · payments by Givro</footer>
+
+<script>
+  const cart = new Map();
+  let currency = "";
+
+  const el = {
+    products: document.getElementById("products"),
+    lines: document.getElementById("lines"),
+    total: document.getElementById("total"),
+    pay: document.getElementById("payBtn"),
+    hint: document.getElementById("hint"),
+    err: document.getElementById("err"),
+  };
+
+  function cents(decimal) {
+    const [w, f = ""] = String(decimal).split(".");
+    return Number(w) * 100 + Number((f + "00").slice(0, 2));
+  }
+  function money(c) {
+    return `${Math.floor(c / 100)}.${String(c % 100).padStart(2, "0")}`;
+  }
+
+  function showError(message) {
+    el.err.hidden = !message;
+    el.err.textContent = message || "";
+  }
+
+  function render(products) {
+    el.products.innerHTML = "";
+    for (const p of products) {
+      const row = document.createElement("div");
+      row.className = "product";
+      row.innerHTML = `
+        <div class="art">${p.art}</div>
+        <div class="body">
+          <div class="name"></div>
+          <div class="note"></div>
+          <div class="price"></div>
         </div>
-        <div class="row two">
-          <div>
-            <label for="recipient_identifier">Recipient (merchant receiving identity)</label>
-            <input id="recipient_identifier" name="recipient_identifier" placeholder="merchant@example.com" required />
-            <div id="recipientHint" class="hint"></div>
-          </div>
-          <div>
-            <label for="recipient_kind">Identifier kind</label>
-            <select id="recipient_kind" name="recipient_kind">
-              <option value="email">email</option>
-              <option value="givro_id">Givro ID</option>
-              <option value="x">x handle</option>
-            </select>
-          </div>
-        </div>
-        <div class="row two">
-          <div>
-            <label for="chain">Chain</label>
-            <select id="chain" name="chain" required disabled>
-              <option value="">Loading…</option>
-            </select>
-          </div>
-          <div>
-            <label for="token">Token</label>
-            <select id="token" name="token" required disabled>
-              <option value="">Loading…</option>
-            </select>
-          </div>
-        </div>
-        <div class="row">
-          <div>
-            <label for="message">Message (shown to the payer)</label>
-            <textarea id="message" name="message"></textarea>
-          </div>
-        </div>
-        <div class="actions">
-          <button class="primary" id="payBtn" type="submit">Pay / Create Pay Link</button>
-          <button class="secondary" id="openBtn" type="button" disabled>Open Pay Link</button>
-        </div>
-      </form>
-      <div id="status" class="status" hidden></div>
-      <a id="payLink" class="pay" href="#" target="_blank" rel="noopener" hidden></a>
-    </section>
-
-    <section style="margin-top: 28px">
-      <h2 style="font-size: 1.05rem; margin-bottom: 8px">End-to-end steps</h2>
-      <ol class="steps">
-        <li>Register / sign in to Enterprise at <strong>https://givro.to/enterprise</strong> and create a <strong>test</strong> API key.</li>
-        <li>Put the key in <code>GIVRO_API_KEY</code> in this directory’s <code>.env</code>, then <code>npm start</code>.</li>
-        <li>Adjust the amount / recipient email on this page and click “Pay” → a <code>pay_url</code> is created.</li>
-        <li>Open the link to Givro <code>/send</code>, approve with your wallet, and complete funding.</li>
-      </ol>
-    </section>
-  </main>
-
-  <script>
-    const $ = (id) => document.getElementById(id);
-    const form = $("payForm");
-    const statusEl = $("status");
-    const payLink = $("payLink");
-    const openBtn = $("openBtn");
-    const payBtn = $("payBtn");
-    const keyBadge = $("keyBadge");
-    const chainSelect = $("chain");
-    const tokenSelect = $("token");
-    let lastPayUrl = "";
-    // Chain/token lists come from Givro's public supported-assets registry
-    // (proxied by this demo's server); the selects are linked.
-    let supportedChains = [];
-
-    function showStatus(text, kind) {
-      statusEl.hidden = false;
-      statusEl.className = "status" + (kind ? " " + kind : "");
-      statusEl.textContent = text;
+        <div class="stepper">
+          <button type="button" aria-label="Remove one">−</button>
+          <span class="qty">0</span>
+          <button type="button" aria-label="Add one">+</button>
+        </div>`;
+      row.querySelector(".name").textContent = p.name;
+      row.querySelector(".note").textContent = p.note;
+      row.querySelector(".price").textContent = `${p.price} ${currency}`;
+      const [minus, plus] = row.querySelectorAll(".stepper button");
+      const qtyEl = row.querySelector(".qty");
+      const bump = (delta) => {
+        const next = Math.max(0, Math.min(99, (cart.get(p.sku) ?? 0) + delta));
+        if (next === 0) cart.delete(p.sku); else cart.set(p.sku, next);
+        qtyEl.textContent = String(next);
+        renderCart(products);
+      };
+      minus.addEventListener("click", () => bump(-1));
+      plus.addEventListener("click", () => bump(1));
+      el.products.appendChild(row);
     }
+  }
 
-    function tokenAddressOf(token) {
-      return token.address || token.contract || "";
+  function renderCart(products) {
+    el.lines.innerHTML = "";
+    let totalCents = 0;
+    for (const [sku, qty] of cart) {
+      const p = products.find((x) => x.sku === sku);
+      if (!p) continue;
+      const lineCents = cents(p.price) * qty;
+      totalCents += lineCents;
+      const line = document.createElement("div");
+      line.className = "line";
+      line.innerHTML = `<span class="qtyname"></span><span class="amt"></span>`;
+      line.querySelector(".qtyname").textContent = `${qty} × ${p.name}`;
+      line.querySelector(".amt").textContent = money(lineCents);
+      el.lines.appendChild(line);
     }
-
-    function shortAddr(addr) {
-      return addr.length > 14 ? addr.slice(0, 8) + "…" + addr.slice(-6) : addr;
+    if (cart.size === 0) {
+      el.lines.innerHTML = `<div class="empty">Nothing selected yet.</div>`;
     }
+    el.total.textContent = `${money(totalCents)} ${currency}`;
+    el.pay.disabled = cart.size === 0;
+    el.pay.textContent = cart.size === 0 ? "Pay" : `Pay ${money(totalCents)} ${currency}`;
+  }
 
-    function selectedChain() {
-      return supportedChains[Number(chainSelect.value)] || null;
-    }
-
-    function selectedToken() {
-      const chain = selectedChain();
-      return chain ? chain.tokens[Number(tokenSelect.value)] || null : null;
-    }
-
-    function populateTokens(preferred) {
-      const chain = selectedChain();
-      tokenSelect.innerHTML = "";
-      if (!chain || chain.tokens.length === 0) {
-        tokenSelect.append(new Option("(no tokens available on this chain)", ""));
-        tokenSelect.disabled = true;
-        return;
-      }
-      chain.tokens.forEach((token, index) => {
-        const addr = tokenAddressOf(token);
-        const label = token.native
-          ? `${token.symbol} (native)`
-          : addr && addr !== "native"
-            ? `${token.symbol} — ${shortAddr(addr)}`
-            : token.symbol;
-        tokenSelect.append(new Option(label, String(index)));
+  async function checkout() {
+    showError("");
+    el.pay.disabled = true;
+    el.pay.textContent = "Creating order…";
+    try {
+      const res = await fetch("/api/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: [...cart].map(([sku, quantity]) => ({ sku, quantity })),
+        }),
       });
-      tokenSelect.disabled = false;
-      if (preferred) {
-        const wanted = String(preferred).toLowerCase();
-        const idx = chain.tokens.findIndex((token) =>
-          token.symbol.toLowerCase() === wanted || tokenAddressOf(token).toLowerCase() === wanted);
-        if (idx >= 0) tokenSelect.value = String(idx);
+      const body = await res.json();
+      if (!res.ok || !body.ok) throw new Error(body.code ? `${body.error} (${body.code})` : body.error || `HTTP ${res.status}`);
+
+      // The pay page opens in its own tab and this tab becomes the order
+      // page. A return_url on the link is a courtesy button back here; the
+      // webhook is still what marks the order paid.
+      window.open(body.pay_url, "_blank", "noopener");
+      window.location.href = `/order/${body.order_id}`;
+    } catch (error) {
+      showError(String(error.message || error));
+      el.pay.disabled = false;
+      renderCart(window.__products || []);
+    }
+  }
+
+  (async () => {
+    try {
+      const [catalog, config] = await Promise.all([
+        fetch("/api/catalog").then((r) => r.json()),
+        fetch("/api/config").then((r) => r.json()),
+      ]);
+      currency = catalog.currency;
+      window.__products = catalog.products;
+      render(catalog.products);
+      renderCart(catalog.products);
+      if (!config.has_api_key) {
+        showError("GIVRO_API_KEY is not set — checkout will fail. Set it in .env and restart.");
+      } else {
+        el.hint.textContent = `Paid in ${currency} on chain ${config.defaults.chain_id} · ${config.environment} environment.`;
       }
+    } catch (error) {
+      showError(`Could not load the store: ${error.message || error}`);
     }
+  })();
 
-    function populateChains(defaults) {
-      chainSelect.innerHTML = "";
-      supportedChains.forEach((chain, index) => {
-        chainSelect.append(new Option(`${chain.label} (${chain.ecosystem} · ${chain.chainId})`, String(index)));
-      });
-      chainSelect.disabled = false;
-      const wantedIdx = supportedChains.findIndex((chain) =>
-        chain.ecosystem === (defaults.ecosystem || "evm") && chain.chainId === Number(defaults.chain_id));
-      chainSelect.value = String(wantedIdx >= 0 ? wantedIdx : 0);
-      populateTokens(defaults.token_address || defaults.token_symbol);
-    }
-
-    async function loadAssets(defaults) {
-      const res = await fetch("/api/supported-assets");
-      const data = await res.json().catch(() => null);
-      if (!res.ok || !data || !data.ok || !Array.isArray(data.chains) || data.chains.length === 0) {
-        throw new Error((data && data.error) || "failed to load supported assets");
-      }
-      supportedChains = data.chains;
-      populateChains(defaults);
-    }
-
-    chainSelect.addEventListener("change", () => populateTokens());
-
-    // A Givro ID is a name Givro issued to one business line; it has no mailbox,
-    // which is exactly why a one-person company can collect under several.
-    const RECIPIENT_HINTS = {
-      email: ["merchant@example.com", "A verified member email of the organization."],
-      givro_id: ["acme.sales", "A Givro ID — the name behind givro.to/@acme.sales. No mailbox needed."],
-      x: ["acmepay", "An X handle, without the @."],
-    };
-
-    function applyRecipientKind() {
-      const [placeholder, hint] = RECIPIENT_HINTS[$("recipient_kind").value] || RECIPIENT_HINTS.email;
-      $("recipient_identifier").placeholder = placeholder;
-      $("recipientHint").textContent = hint;
-    }
-
-    $("recipient_kind").addEventListener("change", applyRecipientKind);
-
-    async function loadConfig() {
-      const res = await fetch("/api/config");
-      const data = await res.json();
-      if (!data.ok) throw new Error("failed to load config");
-      const d = data.defaults || {};
-      $("amount").value = d.amount || "1.00";
-      $("recipient_identifier").value = d.recipient_identifier || "";
-      $("recipient_kind").value = d.recipient_kind || "email";
-      applyRecipientKind();
-      $("fee_payer").value = d.fee_payer || "payer";
-      $("message").value = d.message || "";
-      keyBadge.textContent = data.has_api_key
-        ? `API key ready · env=${data.environment} · ${data.api_base}`
-        : "GIVRO_API_KEY missing — edit .env then restart npm start";
-      keyBadge.className = "badge " + (data.has_api_key ? "ready" : "missing");
-      await loadAssets(d);
-    }
-
-    form.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      payBtn.disabled = true;
-      openBtn.disabled = true;
-      payLink.hidden = true;
-      showStatus("Creating pay link via Enterprise API…");
-      try {
-        const chain = selectedChain();
-        const token = selectedToken();
-        if (!chain || !token) throw new Error("Select a chain and token (retry if the lists failed to load)");
-        const payload = {
-          amount: $("amount").value.trim(),
-          recipient_identifier: $("recipient_identifier").value.trim(),
-          recipient_kind: $("recipient_kind").value,
-          chain_id: chain.chainId,
-          ecosystem: chain.ecosystem,
-          // The payment-links API keys tokens by their registry identifier:
-          // ERC-20/TRC-20 addresses, the zero address for native ETH, and the
-          // "native" marker for TRX. Symbol-only entries (older portals'
-          // supported_assets) fall back to token_symbol resolution.
-          ...(function () {
-            const addr = tokenAddressOf(token);
-            return addr ? { token_address: addr } : { token_symbol: token.symbol };
-          })(),
-          fee_payer: $("fee_payer").value,
-          message: $("message").value.trim(),
-          merchant_ref: "demo_" + Date.now(),
-        };
-        const res = await fetch("/api/create-pay-link", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        const data = await res.json();
-        if (!res.ok || !data.ok) {
-          throw new Error(data.error || ("HTTP " + res.status));
-        }
-        lastPayUrl = data.pay_url || "";
-        if (!lastPayUrl) throw new Error("API returned no pay_url");
-        showStatus(
-          "Pay link created.\n\n" +
-          "payment_link_id: " + (data.payment_link_id || data.payment_link?.payment_request_id || "(n/a)") + "\n" +
-          "merchant_ref: " + (data.payment_link?.merchant_ref || payload.merchant_ref) + "\n" +
-          "pay_url:\n" + lastPayUrl,
-          "ok",
-        );
-        payLink.href = lastPayUrl;
-        payLink.textContent = lastPayUrl;
-        payLink.hidden = false;
-        openBtn.disabled = false;
-      } catch (err) {
-        showStatus(String(err && err.message ? err.message : err), "error");
-      } finally {
-        payBtn.disabled = false;
-      }
-    });
-
-    openBtn.addEventListener("click", () => {
-      if (lastPayUrl) window.open(lastPayUrl, "_blank", "noopener,noreferrer");
-    });
-
-    loadConfig().catch((err) => {
-      keyBadge.textContent = "config load failed";
-      keyBadge.className = "badge missing";
-      showStatus(String(err), "error");
-    });
-  </script>
+  el.pay.addEventListener("click", checkout);
+</script>
 </body>
 </html>

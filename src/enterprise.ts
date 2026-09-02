@@ -1,3 +1,4 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { GivroEnterpriseApiError, GivroPayError, GivroPayTimeoutError } from "./errors.js";
 
 /** Server-only configuration. Never send this object or its API key to a browser. */
@@ -59,6 +60,19 @@ export interface CreatePaymentLinkBase {
    * portal refuses with `invalid_request`.
    */
   expires_in_seconds?: number;
+  /**
+   * Where the hosted pay page offers to send the payer once they are done.
+   *
+   * It is an offer, not a redirect: the page renders a button the payer
+   * chooses to press and shows the host it leads to. Nothing about the payment
+   * is communicated through it — the payer may never press it, and a browser
+   * that lands back on the merchant proves only that a browser landed there.
+   * The webhook remains the only account of what was actually paid.
+   *
+   * Must be an absolute https:// URL with no embedded credentials, at most
+   * 2048 characters; otherwise the portal refuses with `invalid_request`.
+   */
+  return_url?: string;
   message?: string;
 }
 
@@ -105,6 +119,85 @@ export interface ListPaymentLinksParams {
   created_to?: number;
   cursor?: string;
   limit?: number;
+}
+
+/** One token on an Enterprise `supported_assets` chain or Tron network. */
+export interface EnterpriseSupportedToken {
+  symbol: string;
+  address: string;
+  decimals: number;
+  native?: boolean;
+}
+
+export interface EnterpriseSupportedEvmChain {
+  chain_id: number;
+  name: string;
+  assets: string[];
+  tokens: EnterpriseSupportedToken[];
+  funding_path_configured?: boolean;
+}
+
+export interface EnterpriseSupportedTronNetwork {
+  network: string;
+  chain_id: number;
+  name: string;
+  assets: string[];
+  tokens: EnterpriseSupportedToken[];
+}
+
+/**
+ * What `GET /api/enterprise/v1/supported_assets` (and `supported_chains`)
+ * actually returns. EVM chains live in `chains`; Tron is alongside in
+ * `tron_networks` — folding it into `chains` would break callers that treat
+ * that array as EVM-only.
+ */
+export interface EnterpriseSupportedConfig {
+  environment: "test" | "live";
+  chains: EnterpriseSupportedEvmChain[];
+  tron_networks: EnterpriseSupportedTronNetwork[];
+}
+
+/** Default freshness window for `Givro-Signature` timestamps, in seconds. */
+export const ENTERPRISE_WEBHOOK_TOLERANCE_SECONDS = 300;
+
+/**
+ * Verify a delivered Enterprise webhook.
+ *
+ * The portal signs `HMAC-SHA256(secret, "<t>.<raw body>")` and sends
+ * `Givro-Signature: t=<unix-seconds>,v1=<hex>`. Decode the hex *before*
+ * comparing lengths: a same-length but malformed `v1` would otherwise make
+ * `timingSafeEqual` throw, which is a crash a stranger can trigger.
+ *
+ * Returns false for a missing secret, a missing/malformed header, a timestamp
+ * outside the tolerance window, or a signature that does not match. Never
+ * throws on attacker-controlled input.
+ */
+export function verifyEnterpriseWebhookSignature(p: {
+  secret: string;
+  header: string;
+  rawBody: string;
+  nowSec?: number;
+  toleranceSeconds?: number;
+}): boolean {
+  const secret = p.secret.trim();
+  const header = p.header.trim();
+  if (!secret || !header) return false;
+  const parts: Record<string, string> = {};
+  for (const field of header.split(",")) {
+    const eq = field.indexOf("=");
+    if (eq <= 0) continue;
+    parts[field.slice(0, eq).trim()] = field.slice(eq + 1).trim();
+  }
+  const timestamp = Number(parts.t);
+  const nowSec = p.nowSec ?? Math.floor(Date.now() / 1000);
+  const tolerance = p.toleranceSeconds ?? ENTERPRISE_WEBHOOK_TOLERANCE_SECONDS;
+  if (!Number.isFinite(timestamp) || Math.abs(nowSec - timestamp) > tolerance) return false;
+  const expected = Buffer.from(
+    createHmac("sha256", secret).update(`${parts.t}.${p.rawBody}`).digest("hex"),
+    "hex",
+  );
+  const given = Buffer.from(String(parts.v1 || ""), "hex");
+  return given.length > 0 && given.length === expected.length && timingSafeEqual(given, expected);
 }
 
 function nonEmpty(value: string, name: string): string {
@@ -201,11 +294,11 @@ export class GivroEnterpriseClient {
     return this.request(`/api/payment-links${query.size ? `?${query}` : ""}`);
   }
 
-  getSupportedChains<T = Record<string, unknown>>(): Promise<T> {
+  getSupportedChains(): Promise<EnterpriseSupportedConfig> {
     return this.request("/api/enterprise/v1/supported_chains");
   }
 
-  getSupportedAssets<T = Record<string, unknown>>(): Promise<T> {
+  getSupportedAssets(): Promise<EnterpriseSupportedConfig> {
     return this.request("/api/enterprise/v1/supported_assets");
   }
 

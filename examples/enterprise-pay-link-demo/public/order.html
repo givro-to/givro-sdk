@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Bean &amp; Bridge — Order</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f6f5f2; --surface: #ffffff; --text: #1a1a19; --muted: #6b6b66;
+    --line: #e3e1db; --accent: #1a1a19; --accent-text: #ffffff;
+    --ok: #157347; --wait: #b45309; --bad: #b91c1c;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #131311; --surface: #1c1c1a; --text: #ece9e3; --muted: #9a978f;
+      --line: #2e2e2b; --accent: #ece9e3; --accent-text: #131311;
+      --ok: #4ade80; --wait: #fbbf24; --bad: #f87171;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); }
+  header { border-bottom: 1px solid var(--line); background: var(--surface); }
+  header .inner { max-width: 720px; margin: 0 auto; padding: 18px 20px; display: flex; align-items: baseline; gap: 12px; }
+  .wordmark { font-size: 1.05rem; font-weight: 620; letter-spacing: -0.01em; }
+  .tag { font-size: 0.78rem; color: var(--muted); }
+  main { max-width: 720px; margin: 0 auto; padding: 32px 20px 80px; }
+
+  .status-card {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 12px; padding: 24px; margin-bottom: 20px;
+  }
+  .badge {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-size: 0.78rem; font-weight: 560; letter-spacing: 0.02em;
+    padding: 5px 11px; border-radius: 999px;
+    border: 1px solid currentColor; margin-bottom: 14px;
+  }
+  .badge.wait { color: var(--wait); }
+  .badge.ok   { color: var(--ok); }
+  .badge.bad  { color: var(--bad); }
+  .dot { width: 7px; height: 7px; border-radius: 999px; background: currentColor; flex: none; }
+  .badge.wait .dot { animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: 0.25 } }
+
+  h1 { font-size: 1.4rem; font-weight: 620; letter-spacing: -0.02em; margin: 0 0 6px; }
+  .headline-note { color: var(--muted); font-size: 0.92rem; margin: 0; line-height: 1.55; }
+  .ref { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.8rem; color: var(--muted); margin-top: 14px; }
+
+  a.paylink, button.ghost {
+    display: inline-block; margin-top: 16px; padding: 10px 16px;
+    background: var(--accent); color: var(--accent-text); text-decoration: none;
+    border: 0; border-radius: 10px; font-size: 0.9rem; font-weight: 560; cursor: pointer;
+    font-family: inherit;
+  }
+  button.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); }
+  button.ghost:hover { border-color: var(--muted); }
+
+  section.panel {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 12px; padding: 20px; margin-bottom: 20px;
+  }
+  section.panel h2 {
+    font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--muted); margin: 0 0 14px; font-weight: 560;
+  }
+  .line { display: flex; justify-content: space-between; gap: 12px; font-size: 0.9rem; padding: 6px 0; }
+  .line .amt { font-variant-numeric: tabular-nums; flex: none; }
+  .total { display: flex; justify-content: space-between; border-top: 1px solid var(--line); margin-top: 12px; padding-top: 14px; font-weight: 620; }
+  .total .amt { font-variant-numeric: tabular-nums; }
+
+  ol.timeline { list-style: none; margin: 0; padding: 0; }
+  ol.timeline li { display: flex; gap: 12px; padding: 9px 0; font-size: 0.88rem; align-items: baseline; }
+  ol.timeline .marker { width: 7px; height: 7px; border-radius: 999px; background: var(--ok); flex: none; transform: translateY(-2px); }
+  ol.timeline .type { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.82rem; }
+  ol.timeline .when { color: var(--muted); margin-left: auto; font-variant-numeric: tabular-nums; flex: none; }
+  .waiting { color: var(--muted); font-size: 0.88rem; line-height: 1.55; }
+
+  .devbar { border-top: 1px dashed var(--line); margin-top: 28px; padding-top: 18px; }
+  .devbar p { color: var(--muted); font-size: 0.78rem; margin: 0 0 10px; line-height: 1.5; }
+  .devbar .row { display: flex; flex-wrap: wrap; gap: 8px; }
+  .devbar button {
+    padding: 7px 12px; font-size: 0.8rem; border-radius: 8px; cursor: pointer;
+    border: 1px solid var(--line); background: var(--surface); color: var(--text); font-family: inherit;
+  }
+  .devbar button:hover { border-color: var(--muted); }
+  .devbar button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .err {
+    margin-top: 14px; padding: 10px 12px; border-radius: 8px; font-size: 0.85rem;
+    background: color-mix(in srgb, #dc2626 12%, transparent);
+    border: 1px solid color-mix(in srgb, #dc2626 40%, transparent);
+    white-space: pre-wrap; word-break: break-word;
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="inner">
+    <span class="wordmark">Bean &amp; Bridge</span>
+    <span class="tag">Coffee, shipped Tuesdays</span>
+  </div>
+</header>
+
+<main>
+  <div class="status-card">
+    <div class="badge wait" id="badge"><span class="dot"></span><span id="badgeText">Waiting for payment</span></div>
+    <h1 id="headline">Waiting for your payment</h1>
+    <p class="headline-note" id="headlineNote">Finish paying in the tab that just opened. This page updates itself the moment Givro tells us the payment landed — you can leave it open.</p>
+    <div id="actions"></div>
+    <div class="ref" id="ref"></div>
+  </div>
+
+  <section class="panel">
+    <h2>Order</h2>
+    <div id="lines"></div>
+    <div class="total"><span>Total</span><span class="amt" id="total"></span></div>
+  </section>
+
+  <section class="panel">
+    <h2>Payment events</h2>
+    <ol class="timeline" id="timeline"></ol>
+    <div class="waiting" id="timelineEmpty">No events yet. Each one arrives as a signed webhook from Givro.</div>
+  </section>
+
+  <div class="devbar" id="devbar" hidden>
+    <p>Test environment · drive the portal's sandbox simulator instead of paying with a wallet.</p>
+    <div class="row">
+      <button data-scenario="success">success</button>
+      <button data-scenario="failure">failure</button>
+      <button data-scenario="cancelled">cancelled</button>
+      <button data-scenario="unclaimed_refund">unclaimed_refund</button>
+    </div>
+  </div>
+
+  <div class="err" id="err" hidden></div>
+</main>
+
+<script>
+  const orderId = location.pathname.split("/").pop();
+  const el = {
+    badge: document.getElementById("badge"),
+    badgeText: document.getElementById("badgeText"),
+    headline: document.getElementById("headline"),
+    note: document.getElementById("headlineNote"),
+    actions: document.getElementById("actions"),
+    ref: document.getElementById("ref"),
+    lines: document.getElementById("lines"),
+    total: document.getElementById("total"),
+    timeline: document.getElementById("timeline"),
+    timelineEmpty: document.getElementById("timelineEmpty"),
+    devbar: document.getElementById("devbar"),
+    err: document.getElementById("err"),
+  };
+
+  const PRESENTATION = {
+    awaiting_payment: { tone: "wait", badge: "Waiting for payment", headline: "Waiting for your payment",
+      note: "Finish paying in the tab that just opened. This page updates itself the moment Givro tells us the payment landed — you can leave it open." },
+    funded:           { tone: "wait", badge: "Payment received", headline: "Payment received",
+      note: "The funds are in. We're waiting for the recipient to claim them before the order is confirmed." },
+    paid:             { tone: "ok",   badge: "Paid", headline: "Thank you — your order is confirmed",
+      note: "Payment settled. We'll email you a shipping notice on Tuesday." },
+    expired:          { tone: "bad",  badge: "Expired", headline: "This checkout expired",
+      note: "The payment window closed before the funds were claimed. Nothing was charged." },
+    cancelled:        { tone: "bad",  badge: "Cancelled", headline: "Payment cancelled",
+      note: "The payer cancelled before the payment completed. Nothing was charged." },
+    refund_pending:   { tone: "wait", badge: "Refund in progress", headline: "Refund in progress",
+      note: "The payment was never claimed, so it is on its way back to the payer's wallet." },
+    refunded:         { tone: "bad",  badge: "Refunded", headline: "Payment refunded",
+      note: "The funds went back to the payer's wallet. The order was not fulfilled." },
+  };
+
+  function showError(message) {
+    el.err.hidden = !message;
+    el.err.textContent = message || "";
+  }
+
+  let lastEventCount = -1;
+  let lastStatus = "";
+
+  function render(order) {
+    const look = PRESENTATION[order.status] ?? PRESENTATION.awaiting_payment;
+    if (order.status !== lastStatus) {
+      el.badge.className = `badge ${look.tone}`;
+      el.badgeText.textContent = look.badge;
+      el.headline.textContent = look.headline;
+      el.note.textContent = look.note;
+      document.title = `Bean & Bridge — ${look.badge}`;
+
+      el.actions.innerHTML = "";
+      if (order.status === "awaiting_payment" && order.pay_url) {
+        const a = document.createElement("a");
+        a.className = "paylink";
+        a.href = order.pay_url;
+        a.target = "_blank";
+        a.rel = "noopener";
+        a.textContent = "Open the payment page again";
+        el.actions.appendChild(a);
+      }
+      lastStatus = order.status;
+    }
+
+    el.ref.textContent = `Order ${order.order_id} · payment link ${order.payment_link_id}`;
+
+    el.lines.innerHTML = "";
+    for (const item of order.items) {
+      const row = document.createElement("div");
+      row.className = "line";
+      row.innerHTML = `<span></span><span class="amt"></span>`;
+      row.children[0].textContent = `${item.quantity} × ${item.name}`;
+      row.children[1].textContent = item.line_total;
+      el.lines.appendChild(row);
+    }
+    el.total.textContent = `${order.total} ${order.currency}`;
+
+    if (order.events.length !== lastEventCount) {
+      el.timeline.innerHTML = "";
+      for (const event of order.events) {
+        const li = document.createElement("li");
+        li.innerHTML = `<span class="marker"></span><span class="type"></span><span class="when"></span>`;
+        li.querySelector(".type").textContent = event.type;
+        li.querySelector(".when").textContent = new Date(event.at * 1000).toLocaleTimeString();
+        el.timeline.appendChild(li);
+      }
+      el.timelineEmpty.hidden = order.events.length > 0;
+      lastEventCount = order.events.length;
+    }
+
+    el.devbar.hidden = !order.can_simulate;
+  }
+
+  async function poll() {
+    try {
+      const res = await fetch(`/api/orders/${orderId}`, { cache: "no-store" });
+      if (res.status === 404) {
+        showError("This order is not in the merchant's memory any more. The demo keeps orders in-process, so a server restart clears them.");
+        return false;
+      }
+      const order = await res.json();
+      if (!order.ok) throw new Error(order.error || `HTTP ${res.status}`);
+      showError("");
+      render(order);
+      // Terminal states stop the polling. Nothing more is coming.
+      return !["paid", "refunded", "expired", "cancelled"].includes(order.status);
+    } catch (error) {
+      showError(`Could not reach the merchant server: ${error.message || error}`);
+      return true;
+    }
+  }
+
+  (async function loop() {
+    while (await poll()) {
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+  })();
+
+  el.devbar.addEventListener("click", async (event) => {
+    const button = event.target.closest("button[data-scenario]");
+    if (!button) return;
+    const buttons = el.devbar.querySelectorAll("button");
+    buttons.forEach((b) => { b.disabled = true; });
+    showError("");
+    try {
+      const res = await fetch(`/api/orders/${orderId}/simulate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scenario: button.dataset.scenario }),
+      });
+      const body = await res.json();
+      if (!res.ok || body.ok === false) throw new Error(body.error || `HTTP ${res.status}`);
+      // The events arrive over the webhook, not in this response — the poll
+      // above is what will show them.
+    } catch (error) {
+      showError(`Simulation failed: ${error.message || error}`);
+    } finally {
+      buttons.forEach((b) => { b.disabled = false; });
+    }
+  });
+</script>
+</body>
+</html>
