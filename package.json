@@ -1,5 +1,5 @@
 {
-  "name": "@givro.to/givro-sdk",
+  "name": "givro-sdk",
   "version": "0.1.0",
   "description": "Givro SDK for identifier-routed EVM, Tron, and future Solana payment integrations",
   "keywords": [
