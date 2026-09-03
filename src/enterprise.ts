@@ -86,6 +86,10 @@ export interface CreatePaymentLinkBase {
    * stay required either way, and name the asset the payer's page opens on. A
    * list that leaves that pair out is refused: it would be a link opening on an
    * asset its own quote declines.
+   *
+   * Entries must stay on the link's own ecosystem (`evm` or `tron`). A mixed
+   * ecosystem set is rejected by the API because the payer cannot satisfy it in
+   * one wallet/escrow flow.
    */
   accepted_assets?: ReadonlyArray<
     { chain_id: number; ecosystem?: EnterpriseEcosystem } & EnterpriseTokenSelector

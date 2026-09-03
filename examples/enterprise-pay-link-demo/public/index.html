@@ -34,6 +34,15 @@
     max-width: 940px; margin: 0 auto; padding: 18px 20px;
     display: flex; align-items: baseline; gap: 12px;
   }
+  .head-spacer { flex: 1; }
+  .head-token {
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--text);
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-size: 0.85rem;
+  }
   .wordmark { font-size: 1.05rem; font-weight: 620; letter-spacing: -0.01em; }
   .tag { font-size: 0.78rem; color: var(--muted); }
   main { max-width: 940px; margin: 0 auto; padding: 32px 20px 80px; }
@@ -98,6 +107,8 @@
   <div class="inner">
     <span class="wordmark">Bean &amp; Bridge</span>
     <span class="tag">Coffee, shipped Tuesdays</span>
+    <span class="head-spacer"></span>
+    <select id="netSelect" class="head-token" aria-label="Network to bill on"></select>
   </div>
 </header>
 
@@ -124,6 +135,7 @@
 <script>
   const cart = new Map();
   let currency = "";
+  let networks = [];
 
   const el = {
     products: document.getElementById("products"),
@@ -132,7 +144,25 @@
     pay: document.getElementById("payBtn"),
     hint: document.getElementById("hint"),
     err: document.getElementById("err"),
+    netSelect: document.getElementById("netSelect"),
   };
+
+  /** What this checkout will actually put on the link, in the buyer's terms. */
+  function renderHint(config) {
+    const network = selectedNetwork();
+    if (!network) {
+      el.hint.textContent = `Configured for ${config.environment} environment.`;
+      return;
+    }
+    const chains = network.chains.join(", ");
+    const symbols = network.symbols.join(" or ");
+    el.hint.textContent = `Pay with ${symbols} on ${chains} — you choose which on the Givro page · ${config.environment} environment.`;
+  }
+
+  function selectedNetwork() {
+    const ecosystem = String(el.netSelect.value || "").trim().toLowerCase();
+    return networks.find((n) => n.ecosystem === ecosystem) ?? networks[0] ?? null;
+  }
 
   function cents(decimal) {
     const [w, f = ""] = String(decimal).split(".");
@@ -214,6 +244,7 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           items: [...cart].map(([sku, quantity]) => ({ sku, quantity })),
+          ecosystem: selectedNetwork()?.ecosystem ?? "",
         }),
       });
       const body = await res.json();
@@ -237,14 +268,27 @@
         fetch("/api/catalog").then((r) => r.json()),
         fetch("/api/config").then((r) => r.json()),
       ]);
-      currency = catalog.currency;
+      // One link stays inside one ecosystem, so the storefront chooses the rail
+      // and the buyer chooses the stablecoin on Givro's pay page.
+      networks = Array.isArray(catalog.networks) ? catalog.networks : [];
+      el.netSelect.innerHTML = "";
+      for (const network of networks) {
+        const option = document.createElement("option");
+        option.value = network.ecosystem;
+        option.textContent = network.label;
+        el.netSelect.appendChild(option);
+      }
+      el.netSelect.hidden = networks.length < 2;
+      if (catalog.default_ecosystem) el.netSelect.value = catalog.default_ecosystem;
+      currency = selectedNetwork()?.currency_label || String(catalog.currency || "").toUpperCase();
       window.__products = catalog.products;
+      window.__config = config;
       render(catalog.products);
       renderCart(catalog.products);
       if (!config.has_api_key) {
         showError("GIVRO_API_KEY is not set — checkout will fail. Set it in .env and restart.");
       } else {
-        el.hint.textContent = `Paid in ${currency} on chain ${config.defaults.chain_id} · ${config.environment} environment.`;
+        renderHint(config);
       }
     } catch (error) {
       showError(`Could not load the store: ${error.message || error}`);
@@ -252,6 +296,12 @@
   })();
 
   el.pay.addEventListener("click", checkout);
+  el.netSelect.addEventListener("change", () => {
+    currency = selectedNetwork()?.currency_label || currency;
+    render(window.__products || []);
+    renderCart(window.__products || []);
+    if (window.__config) renderHint(window.__config);
+  });
 </script>
 </body>
 </html>

@@ -109,6 +109,19 @@ const givro = API_KEY ? createGivroEnterpriseClient({ apiKey: API_KEY, baseUrl: 
 
 /** The identifier kinds a pay link can collect under. */
 const RECIPIENT_KINDS = new Set(["email", "x", "givro_id"]);
+const DEMO_ECOSYSTEMS = new Set(["evm", "tron"]);
+const DEMO_PREFERRED_CHAIN_IDS = new Set([
+  // Base
+  8453,     // mainnet
+  84532,    // sepolia
+  // BSC
+  56,       // mainnet
+  97,       // testnet
+  // Tron
+  728126428,   // mainnet
+  3448148188,  // nile
+]);
+const DEMO_STABLE_SYMBOLS = new Set(["USDC", "USDT"]);
 
 function defaultsFromEnv() {
   return {
@@ -266,6 +279,99 @@ async function fetchSupportedAssets() {
   return assetsCache.data;
 }
 
+function normalizeTokenAddress(token) {
+  if (!token || typeof token !== "object") return "";
+  return String(token.address ?? token.contract ?? "").trim();
+}
+
+function normalizeSymbol(token) {
+  if (!token || typeof token !== "object") return "";
+  return String(token.symbol ?? "").trim().toUpperCase();
+}
+
+function chooseDefaultPaymentOption(options, defaults) {
+  const ecosystem = String(defaults.ecosystem || "").trim().toLowerCase();
+  const chainId = Number(defaults.chain_id);
+  const tokenAddress = String(defaults.token_address || "").trim().toLowerCase();
+  const tokenSymbol = String(defaults.token_symbol || "").trim().toUpperCase();
+  return options.find((option) => (
+    option.ecosystem === ecosystem
+    && option.chain_id === chainId
+    && (
+      (tokenAddress && option.token_address.toLowerCase() === tokenAddress)
+      || (!tokenAddress && tokenSymbol && option.token_symbol === tokenSymbol)
+    )
+  )) ?? options[0] ?? null;
+}
+
+function buildAcceptedAssets(options, ecosystem) {
+  return options
+    .filter((option) => option.ecosystem === ecosystem)
+    .map((option) => ({
+      ecosystem: option.ecosystem,
+      chain_id: option.chain_id,
+      token_address: option.token_address,
+    }));
+}
+
+async function demoPaymentOptions() {
+  const supported = await fetchSupportedAssets();
+  const stableOptions = [];
+  for (const chain of supported.chains) {
+    const ecosystem = String(chain.ecosystem || "").trim().toLowerCase();
+    if (!DEMO_ECOSYSTEMS.has(ecosystem)) continue;
+    const chainLabel = String(chain.label || `Chain ${chain.chainId}`);
+    const tokens = Array.isArray(chain.tokens) ? chain.tokens : [];
+    for (const token of tokens) {
+      const symbol = normalizeSymbol(token);
+      if (!DEMO_STABLE_SYMBOLS.has(symbol)) continue;
+      const tokenAddress = normalizeTokenAddress(token);
+      if (!tokenAddress) continue;
+      stableOptions.push({
+        id: `${ecosystem}:${chain.chainId}:${tokenAddress.toLowerCase()}`,
+        ecosystem,
+        chain_id: Number(chain.chainId),
+        chain_label: chainLabel,
+        token_symbol: symbol,
+        token_address: tokenAddress,
+        label: `${symbol} on ${chainLabel}`,
+      });
+    }
+  }
+  // Prefer Base/BSC/Tron across live+test chain IDs. If a deployment runs a
+  // different chain profile (for example local/dev), keep the demo usable by
+  // falling back to every stable option the API key environment exposes.
+  const options = stableOptions.filter((option) => DEMO_PREFERRED_CHAIN_IDS.has(option.chain_id));
+  const effectiveOptions = options.length > 0 ? options : stableOptions;
+  const defaults = defaultsFromEnv();
+  const defaultOption = chooseDefaultPaymentOption(effectiveOptions, defaults);
+  return {
+    options: effectiveOptions,
+    default_option_id: defaultOption?.id ?? null,
+    // One link cannot mix EVM and Tron, so the storefront's real choice is
+    // which rail to bill on; the stablecoins inside it all go on the link and
+    // the buyer picks between them on the hosted pay page.
+    networks: demoPaymentNetworks(effectiveOptions),
+    default_ecosystem: defaultOption?.ecosystem ?? null,
+  };
+}
+
+/** The rails on offer, each named by the chains and stablecoins it spans. */
+function demoPaymentNetworks(options) {
+  const byEcosystem = new Map();
+  for (const option of options) {
+    const entry = byEcosystem.get(option.ecosystem) ?? { ecosystem: option.ecosystem, chains: [], symbols: [] };
+    if (!entry.chains.includes(option.chain_label)) entry.chains.push(option.chain_label);
+    if (!entry.symbols.includes(option.token_symbol)) entry.symbols.push(option.token_symbol);
+    byEcosystem.set(option.ecosystem, entry);
+  }
+  return [...byEcosystem.values()].map((entry) => ({
+    ...entry,
+    label: entry.chains.join(" + "),
+    currency_label: entry.symbols.join("/"),
+  }));
+}
+
 async function createEnterprisePayLink(input) {
   if (!givro) {
     const err = new Error("GIVRO_API_KEY is not set. Copy .env.example to .env and paste your Enterprise API key.");
@@ -317,6 +423,15 @@ async function createEnterprisePayLink(input) {
     ...(input.expires_in_seconds === undefined
       ? {}
       : { expires_in_seconds: Number(input.expires_in_seconds) }),
+    ...(Array.isArray(input.accepted_assets) && input.accepted_assets.length > 0
+      ? {
+          accepted_assets: input.accepted_assets.map((entry) => ({
+            ecosystem: String(entry.ecosystem || "").trim().toLowerCase() === "tron" ? "tron" : "evm",
+            chain_id: Number(entry.chain_id),
+            token_address: String(entry.token_address || "").trim(),
+          })),
+        }
+      : {}),
   };
 
   // Owned by the caller, never derived from the body: two payers buying the
@@ -503,11 +618,36 @@ async function createOrder(input) {
   }
 
   const defaults = defaultsFromEnv();
+  const paymentOptions = await demoPaymentOptions();
+  // The storefront picks a rail; every stablecoin on it goes onto the link and
+  // the buyer chooses between them on the hosted Givro pay page. Narrowing to
+  // one symbol here would defeat the point -- the link would accept a single
+  // asset again. A link cannot mix EVM and Tron, which is why the rail, not
+  // the token, is what the storefront has to decide.
+  const requestedEcosystem = String(input.ecosystem || "").trim().toLowerCase();
+  const railOptions = DEMO_ECOSYSTEMS.has(requestedEcosystem)
+    ? paymentOptions.options.filter((option) => option.ecosystem === requestedEcosystem)
+    : paymentOptions.options;
+  // One pinned asset is still required at creation, and it has to be a member
+  // of accepted_assets: prefer the env-selected one where the chosen rail
+  // carries it, and otherwise lead with the first stablecoin on that rail.
+  const selectedOption = chooseDefaultPaymentOption(railOptions, defaults);
+  if (!selectedOption) {
+    const err = new Error("No supported stablecoin is available on that network in this API key environment.");
+    err.status = 400;
+    err.code = "demo_payment_option_unavailable";
+    throw err;
+  }
   const orderId = `ord_${randomUUID().replace(/-/g, "").slice(0, 20)}`;
   const total = formatCents(totalCents);
 
   const link = await createEnterprisePayLink({
     amount: total,
+    ecosystem: selectedOption.ecosystem,
+    chain_id: selectedOption.chain_id,
+    token_address: selectedOption.token_address,
+    token_symbol: selectedOption.token_symbol,
+    accepted_assets: buildAcceptedAssets(railOptions, selectedOption.ecosystem),
     merchant_ref: orderId,
     message: `Order ${orderId}`,
     // Only when this process has a public https origin the portal will accept.
@@ -524,7 +664,8 @@ async function createOrder(input) {
     created_at: Math.floor(Date.now() / 1000),
     items,
     total,
-    currency: defaults.token_symbol || "tokens",
+    currency: selectedOption.token_symbol,
+    payment_option: selectedOption,
     pay_url: link.pay_url,
     payment_link_id: link.payment_link_id,
     events: [],
@@ -618,9 +759,29 @@ async function handleRequest(req, res) {
   }
 
   if (req.method === "GET" && url.pathname === "/api/catalog") {
-    const d = defaultsFromEnv();
-    sendJson(res, 200, { ok: true, currency: d.token_symbol || "tokens", products: CATALOG });
-    return;
+    try {
+      const d = defaultsFromEnv();
+      const payment = await demoPaymentOptions();
+      const selected = payment.options.find((option) => option.id === payment.default_option_id) ?? null;
+      sendJson(res, 200, {
+        ok: true,
+        currency: selected?.token_symbol || d.token_symbol || "tokens",
+        products: CATALOG,
+        payment_options: payment.options,
+        default_payment_option_id: payment.default_option_id,
+        accepted_assets_summary: payment.options.map((option) => option.label),
+        networks: payment.networks,
+        default_ecosystem: payment.default_ecosystem,
+      });
+      return;
+    } catch (error) {
+      sendJson(res, Number.isInteger(error.status) ? error.status : 500, {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+        code: error.code,
+      });
+      return;
+    }
   }
 
   if (req.method === "POST" && url.pathname === "/api/orders") {

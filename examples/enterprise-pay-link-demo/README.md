@@ -103,7 +103,10 @@ npm install && npm run build
 cd examples/enterprise-pay-link-demo
 npm install         # links givro-sdk from ../..
 cp .env.example .env
-# Edit .env: set GIVRO_API_KEY, the receiving identity, chain/token, etc.
+# Edit .env: set GIVRO_API_KEY, the receiving identity, and a default
+# ecosystem/pinned asset. The demo itself does not ask the buyer to choose a
+# chain or token; it declares `accepted_assets` and Givro's hosted pay page
+# presents the actual choice.
 npm start
 # Open http://127.0.0.1:3847 in a browser
 ```
@@ -117,8 +120,8 @@ npm start
 | `GIVRO_ENVIRONMENT` | `test` or `live`, must match the key |
 | `GIVRO_RECIPIENT_KIND` | `email`, `givro_id`, or `x` |
 | `GIVRO_RECIPIENT_IDENTIFIER` | Recipient email / Givro ID / X handle (on-chain claims bind to this identity) |
-| `GIVRO_CHAIN_ID` | Must be a chain the key's environment actually bills on — **ask, don't guess**: `curl localhost:3847/api/supported-assets` lists exactly what this key accepts. Different portal deployments open different testnets |
-| `GIVRO_TOKEN_SYMBOL` / `GIVRO_TOKEN_ADDRESS` | Token symbol (e.g. `ETH`/`USDC`) or contract address; the address wins. This is the storefront's currency, so a stablecoin makes the prices read naturally |
+| `GIVRO_CHAIN_ID` | One pinned chain for link creation. It must match the API-key environment and should be one of the accepted stablecoin options on the same ecosystem |
+| `GIVRO_TOKEN_SYMBOL` / `GIVRO_TOKEN_ADDRESS` | One pinned asset for link creation. The demo uses it only as the link's lead asset; the hosted Givro pay page offers the full same-ecosystem `accepted_assets` set |
 | `GIVRO_FEE_PAYER` | `payer` or `merchant` |
 | `GIVRO_WEBHOOK_SECRET` | `whsec_...` from Dashboard → Webhooks. **Required** for orders to update; without it the demo logs events but marks them unverified |
 | `GIVRO_PUBLIC_ORIGIN` | Public https origin this demo is reachable on (your tunnel URL). Used to build each pay link's `return_url`. Empty, `http://`, or an unparseable value are ignored — the order still creates, the link simply carries no return URL |
@@ -126,6 +129,7 @@ npm start
 **Notes:**
 
 - The key environment and `chain_id` must match (a test key cannot use a live Base mainnet asset config, and vice versa). Mismatching them is refused with `environment_chain_mismatch`.
+- One link cannot mix EVM and Tron accepted assets. `accepted_assets` must stay inside the link's own ecosystem, so an EVM-pinned link can offer Base/BSC stablecoins, while a Tron-pinned link can offer Tron stablecoins.
 - `recipient_kind` may be `email`, `x`, or `givro_id`. A **Givro ID** is the name behind `givro.to/@acme.sales`; it has no mailbox of its own, which is what lets one verified email run several collection identities, each settling to its own wallets.
 - If creating a live key returns `approval_required`, finish the approval in the Dashboard before creating it.
 - The payer funds a Pay Link with on-chain assets **signed by their own wallet**; Givro never holds funds or debits anyone.
