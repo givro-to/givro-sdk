@@ -358,9 +358,9 @@ async function createEnterprisePayLink(input) {
 // ---------------------------------------------------------------------------
 
 const CATALOG = [
-  { sku: "beans",   name: "Single-Origin Beans",  note: "Ethiopia Yirgacheffe, 340g", price: "18.00", art: "\u2615" },
-  { sku: "grinder", name: "Hand Grinder",         note: "Conical burr, 40 clicks",    price: "45.00", art: "\u2699\ufe0f" },
-  { sku: "kettle",  name: "Pour-Over Kettle",     note: "Gooseneck, 0.9L",            price: "62.00", art: "\ud83e\uded6" },
+  { sku: "beans",   name: "Single-Origin Beans",  note: "Ethiopia Yirgacheffe, 340g", price: "1.00", art: "\u2615" },
+  { sku: "grinder", name: "Hand Grinder",         note: "Conical burr, 40 clicks",    price: "2.00", art: "\u2699\ufe0f" },
+  { sku: "kettle",  name: "Pour-Over Kettle",     note: "Gooseneck, 0.9L",            price: "3.00", art: "\ud83e\uded6" },
 ];
 
 /** Demo-scale storage. A real merchant puts these in its own database. */
