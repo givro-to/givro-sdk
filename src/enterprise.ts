@@ -89,7 +89,21 @@ export interface CreatePaymentLinkBase {
    *
    * Entries must stay on the link's own ecosystem (`evm` or `tron`). A mixed
    * ecosystem set is rejected by the API because the payer cannot satisfy it in
-   * one wallet/escrow flow.
+   * one wallet/escrow flow. Within one ecosystem the set may span chains, and
+   * the payer then chooses the chain as well as the token.
+   *
+   * Each entry must also name a chain the key's own environment bills on — a
+   * test key cannot list a mainnet chain — and a token that resolves on it.
+   * Symbols are resolved to addresses at creation, so a chain whose registry
+   * does not carry the symbol can only be reached by `token_address`.
+   *
+   * At most 12 entries, and no asset twice. The API refuses the whole request
+   * rather than trimming it, so a set that breaks any of these rules never
+   * becomes a half-configured link.
+   *
+   * Entries spell the chain `chain_id`, matching the REST body; the field above
+   * is `chainId` for historical reasons. The API reads either spelling in
+   * either place.
    */
   accepted_assets?: ReadonlyArray<
     { chain_id: number; ecosystem?: EnterpriseEcosystem } & EnterpriseTokenSelector
