@@ -76,11 +76,14 @@ export interface CreatePaymentLinkBase {
   /**
    * Every asset this link will take, when it should take more than one.
    *
-   * The amount is stated once and means the same in all of them, so the entries
-   * are restricted to dollar-pegged stablecoins: 3.00 USDC and 3.00 USDT are the
-   * same price, the way paying by one card network or another is. Choosing
-   * between them is the payer's; an unpegged asset would make the amount itself
-   * a question and is refused with `invalid_request`.
+   * Product model: amount + currency are fixed first (e.g. 3.00 USDC). Entries
+   * are restricted to dollar-pegged stablecoins so that face amount stays
+   * meaningful. Prefer one symbol on every channel (chain) you want to accept —
+   * Base / BSC / … are payment channels for that currency, like Visa /
+   * Mastercard for USD. Listing USDC and USDT together is a multi-currency
+   * invoice (the payer then picks a currency as well as a channel); an
+   * unpegged asset would make the amount itself a question and is refused with
+   * `invalid_request`.
    *
    * Omitted, the link takes only the `chainId` and token named above — which
    * stay required either way, and name the asset the payer's page opens on. A
@@ -90,7 +93,7 @@ export interface CreatePaymentLinkBase {
    * Entries must stay on the link's own ecosystem (`evm` or `tron`). A mixed
    * ecosystem set is rejected by the API because the payer cannot satisfy it in
    * one wallet/escrow flow. Within one ecosystem the set may span chains, and
-   * the payer then chooses the chain as well as the token.
+   * the payer then chooses the channel on the pay page.
    *
    * Each entry must also name a chain the key's own environment bills on — a
    * test key cannot list a mainnet chain — and a token that resolves on it.

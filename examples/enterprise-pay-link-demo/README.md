@@ -104,9 +104,9 @@ cd examples/enterprise-pay-link-demo
 npm install         # links givro-sdk from ../..
 cp .env.example .env
 # Edit .env: set GIVRO_API_KEY, the receiving identity, and a default
-# ecosystem/pinned asset. The demo itself does not ask the buyer to choose a
-# chain or token; it declares `accepted_assets` and Givro's hosted pay page
-# presents the actual choice.
+# ecosystem / lead stablecoin. The storefront prices in one currency (USDC or
+# USDT); checkout puts that symbol on every preferred chain of the rail into
+# `accepted_assets`. The payer picks the chain (payment channel) on Givro.
 npm start
 # Open http://127.0.0.1:3847 in a browser
 ```
@@ -120,8 +120,8 @@ npm start
 | `GIVRO_ENVIRONMENT` | `test` or `live`, must match the key |
 | `GIVRO_RECIPIENT_KIND` | `email`, `givro_id`, or `x` |
 | `GIVRO_RECIPIENT_IDENTIFIER` | Recipient email / Givro ID / X handle (on-chain claims bind to this identity) |
-| `GIVRO_CHAIN_ID` | One pinned chain for link creation. It must match the API-key environment and should be one of the accepted stablecoin options on the same ecosystem |
-| `GIVRO_TOKEN_SYMBOL` / `GIVRO_TOKEN_ADDRESS` | One pinned asset for link creation. The demo uses it only as the link's lead asset; the hosted Givro pay page offers the full same-ecosystem `accepted_assets` set |
+| `GIVRO_CHAIN_ID` | Lead chain for link creation. Must match the API-key environment and should be one of the preferred channels for the chosen currency |
+| `GIVRO_TOKEN_SYMBOL` / `GIVRO_TOKEN_ADDRESS` | Default storefront currency / lead asset (`USDC` or `USDT`). Checkout bills in the currency the buyer picked in the UI; this is the fallback lead when creating the link |
 | `GIVRO_FEE_PAYER` | `payer` or `merchant` |
 | `GIVRO_WEBHOOK_SECRET` | `whsec_...` from Dashboard → Webhooks. **Required** for orders to update; without it the demo logs events but marks them unverified |
 | `GIVRO_PUBLIC_ORIGIN` | Public https origin this demo is reachable on (your tunnel URL). Used to build each pay link's `return_url`. Empty, `http://`, or an unparseable value are ignored — the order still creates, the link simply carries no return URL |
@@ -129,7 +129,7 @@ npm start
 **Notes:**
 
 - The key environment and `chain_id` must match (a test key cannot use a live Base mainnet asset config, and vice versa). Mismatching them is refused with `environment_chain_mismatch`.
-- One link cannot mix EVM and Tron accepted assets. `accepted_assets` must stay inside the link's own ecosystem, so an EVM-pinned link can offer Base/BSC stablecoins, while a Tron-pinned link can offer Tron stablecoins.
+- Amount + currency are fixed on the storefront. Chains are payment channels for that currency on one rail (`GIVRO_ECOSYSTEM`). One link cannot mix EVM and Tron; an EVM link can offer Base/BSC for the same USDC, while a Tron link offers Tron channels.
 - `recipient_kind` may be `email`, `x`, or `givro_id`. A **Givro ID** is the name behind `givro.to/@acme.sales`; it has no mailbox of its own, which is what lets one verified email run several collection identities, each settling to its own wallets.
 - If creating a live key returns `approval_required`, finish the approval in the Dashboard before creating it.
 - The payer funds a Pay Link with on-chain assets **signed by their own wallet**; Givro never holds funds or debits anyone.
@@ -138,13 +138,15 @@ npm start
 
 ## C. Using the demo
 
-1. Open `http://127.0.0.1:3847`. Pick some items — prices are computed on the
-   server, never taken from the browser.
-2. Press **Pay**. The pay page opens in a new tab; this tab becomes
+1. Open `http://127.0.0.1:3847`. Pick a price currency (USDC or USDT) and some
+   items — prices are computed on the server, never taken from the browser.
+2. Press **Pay**. Checkout creates a link for that currency on the preferred
+   channels of the rail; the pay page opens in a new tab and this tab becomes
    `/order/<id>` and starts polling.
-3. Pay on the Givro page (or, with a test key, press one of the **sandbox
-   scenario** buttons at the bottom of the order page to drive the lifecycle
-   without a wallet).
+3. Pay on the Givro page — after connecting a wallet, pick the chain (payment
+   channel). With a test key, you can also press one of the **sandbox scenario**
+   buttons at the bottom of the order page to drive the lifecycle without a
+   wallet.
 4. Watch the order page flip to **Paid** on its own. The event timeline below it
    is the webhooks arriving.
 

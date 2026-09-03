@@ -314,6 +314,12 @@ function buildAcceptedAssets(options, ecosystem) {
     }));
 }
 
+/** Preferred display / lead symbols for the storefront token picker. */
+function demoAcceptedTokenSymbols(options) {
+  const available = new Set(options.map((option) => option.token_symbol));
+  return ["USDC", "USDT"].filter((symbol) => available.has(symbol));
+}
+
 async function demoPaymentOptions() {
   const supported = await fetchSupportedAssets();
   const stableOptions = [];
@@ -345,14 +351,19 @@ async function demoPaymentOptions() {
   const effectiveOptions = options.length > 0 ? options : stableOptions;
   const defaults = defaultsFromEnv();
   const defaultOption = chooseDefaultPaymentOption(effectiveOptions, defaults);
+  const acceptedTokenSymbols = demoAcceptedTokenSymbols(effectiveOptions);
+  const defaultTokenSymbol = acceptedTokenSymbols.includes("USDC")
+    ? "USDC"
+    : (acceptedTokenSymbols[0] ?? null);
   return {
     options: effectiveOptions,
     default_option_id: defaultOption?.id ?? null,
-    // One link cannot mix EVM and Tron, so the storefront's real choice is
-    // which rail to bill on; the stablecoins inside it all go on the link and
-    // the buyer picks between them on the hosted pay page.
+    // One link cannot mix EVM and Tron. The storefront's visible choice is
+    // which stablecoin to price in; the rail is taken from env / first option.
     networks: demoPaymentNetworks(effectiveOptions),
     default_ecosystem: defaultOption?.ecosystem ?? null,
+    accepted_token_symbols: acceptedTokenSymbols,
+    default_token_symbol: defaultTokenSymbol,
   };
 }
 
@@ -368,7 +379,8 @@ function demoPaymentNetworks(options) {
   return [...byEcosystem.values()].map((entry) => ({
     ...entry,
     label: entry.chains.join(" + "),
-    currency_label: entry.symbols.join("/"),
+    // Channels only — the storefront currency is chosen separately.
+    channel_label: entry.chains.join(" / "),
   }));
 }
 
@@ -619,19 +631,35 @@ async function createOrder(input) {
 
   const defaults = defaultsFromEnv();
   const paymentOptions = await demoPaymentOptions();
-  // The storefront picks a rail; every stablecoin on it goes onto the link and
-  // the buyer chooses between them on the hosted Givro pay page. Narrowing to
-  // one symbol here would defeat the point -- the link would accept a single
-  // asset again. A link cannot mix EVM and Tron, which is why the rail, not
-  // the token, is what the storefront has to decide.
-  const requestedEcosystem = String(input.ecosystem || "").trim().toLowerCase();
+  // The storefront picks the stablecoin to bill in. accepted_assets is that
+  // symbol on every preferred chain of the rail — the payer then chooses the
+  // chain on Givro, not a second token. Mixing USDC and USDT on the link made
+  // the pay page restate "USDC / USDT" after the merchant had already chosen.
+  const requestedSymbol = normalizeSymbol({ symbol: input.token_symbol });
+  const requestedEcosystem = String(input.ecosystem || defaults.ecosystem || "").trim().toLowerCase();
   const railOptions = DEMO_ECOSYSTEMS.has(requestedEcosystem)
     ? paymentOptions.options.filter((option) => option.ecosystem === requestedEcosystem)
     : paymentOptions.options;
+  const symbolOptions = requestedSymbol && DEMO_STABLE_SYMBOLS.has(requestedSymbol)
+    ? railOptions.filter((option) => option.token_symbol === requestedSymbol)
+    : [];
+  if (!requestedSymbol || !DEMO_STABLE_SYMBOLS.has(requestedSymbol)) {
+    const err = new Error("token_symbol must be a storefront currency (USDC or USDT).");
+    err.status = 400;
+    err.code = "demo_currency_required";
+    throw err;
+  }
+  if (symbolOptions.length === 0) {
+    const err = new Error(`${requestedSymbol} is not available on the preferred chains for this API key environment.`);
+    err.status = 400;
+    err.code = "demo_currency_unavailable";
+    throw err;
+  }
+  const offerOptions = symbolOptions;
+  const preferredDefaults = { ...defaults, token_symbol: requestedSymbol, token_address: "" };
   // One pinned asset is still required at creation, and it has to be a member
-  // of accepted_assets: prefer the env-selected one where the chosen rail
-  // carries it, and otherwise lead with the first stablecoin on that rail.
-  const selectedOption = chooseDefaultPaymentOption(railOptions, defaults);
+  // of accepted_assets: prefer the storefront-selected symbol on the rail.
+  const selectedOption = chooseDefaultPaymentOption(offerOptions, preferredDefaults);
   if (!selectedOption) {
     const err = new Error("No supported stablecoin is available on that network in this API key environment.");
     err.status = 400;
@@ -647,7 +675,7 @@ async function createOrder(input) {
     chain_id: selectedOption.chain_id,
     token_address: selectedOption.token_address,
     token_symbol: selectedOption.token_symbol,
-    accepted_assets: buildAcceptedAssets(railOptions, selectedOption.ecosystem),
+    accepted_assets: buildAcceptedAssets(offerOptions, selectedOption.ecosystem),
     merchant_ref: orderId,
     message: `Order ${orderId}`,
     // Only when this process has a public https origin the portal will accept.
@@ -765,11 +793,21 @@ async function handleRequest(req, res) {
       const selected = payment.options.find((option) => option.id === payment.default_option_id) ?? null;
       sendJson(res, 200, {
         ok: true,
-        currency: selected?.token_symbol || d.token_symbol || "tokens",
+        currency: payment.default_token_symbol || selected?.token_symbol || d.token_symbol || "tokens",
         products: CATALOG,
         payment_options: payment.options,
         default_payment_option_id: payment.default_option_id,
-        accepted_assets_summary: payment.options.map((option) => option.label),
+        accepted_assets_summary: (() => {
+          const bySymbol = new Map();
+          for (const option of payment.options) {
+            const chains = bySymbol.get(option.token_symbol) ?? [];
+            if (!chains.includes(option.chain_label)) chains.push(option.chain_label);
+            bySymbol.set(option.token_symbol, chains);
+          }
+          return [...bySymbol.entries()].map(([symbol, chains]) => `${symbol} on ${chains.join(", ")}`);
+        })(),
+        accepted_token_symbols: payment.accepted_token_symbols,
+        default_token_symbol: payment.default_token_symbol,
         networks: payment.networks,
         default_ecosystem: payment.default_ecosystem,
       });

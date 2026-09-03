@@ -108,7 +108,7 @@
     <span class="wordmark">Bean &amp; Bridge</span>
     <span class="tag">Coffee, shipped Tuesdays</span>
     <span class="head-spacer"></span>
-    <select id="netSelect" class="head-token" aria-label="Network to bill on"></select>
+    <select id="tokenSelect" class="head-token" aria-label="Price currency"></select>
   </div>
 </header>
 
@@ -134,7 +134,8 @@
 
 <script>
   const cart = new Map();
-  let currency = "";
+  let currency = "USDC";
+  let tokenSymbols = [];
   let networks = [];
 
   const el = {
@@ -144,24 +145,24 @@
     pay: document.getElementById("payBtn"),
     hint: document.getElementById("hint"),
     err: document.getElementById("err"),
-    netSelect: document.getElementById("netSelect"),
+    tokenSelect: document.getElementById("tokenSelect"),
   };
 
   /** What this checkout will actually put on the link, in the buyer's terms. */
   function renderHint(config) {
-    const network = selectedNetwork();
+    const symbol = selectedTokenSymbol();
+    const network = networks.find((n) => n.ecosystem === "evm") ?? networks[0] ?? null;
     if (!network) {
-      el.hint.textContent = `Configured for ${config.environment} environment.`;
+      el.hint.textContent = `Pay with ${symbol} · ${config.environment} environment.`;
       return;
     }
     const chains = network.chains.join(", ");
-    const symbols = network.symbols.join(" or ");
-    el.hint.textContent = `Pay with ${symbols} on ${chains} — you choose which on the Givro page · ${config.environment} environment.`;
+    el.hint.textContent = `Pay with ${symbol} on ${chains} — pick the network after connecting a wallet on the Givro page · ${config.environment} environment.`;
   }
 
-  function selectedNetwork() {
-    const ecosystem = String(el.netSelect.value || "").trim().toLowerCase();
-    return networks.find((n) => n.ecosystem === ecosystem) ?? networks[0] ?? null;
+  function selectedTokenSymbol() {
+    const symbol = String(el.tokenSelect.value || "").trim().toUpperCase();
+    return tokenSymbols.includes(symbol) ? symbol : (tokenSymbols[0] || currency);
   }
 
   function cents(decimal) {
@@ -175,6 +176,13 @@
   function showError(message) {
     el.err.hidden = !message;
     el.err.textContent = message || "";
+  }
+
+  function applyCurrency() {
+    currency = selectedTokenSymbol();
+    render(window.__products || []);
+    renderCart(window.__products || []);
+    if (window.__config) renderHint(window.__config);
   }
 
   function render(products) {
@@ -244,7 +252,7 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           items: [...cart].map(([sku, quantity]) => ({ sku, quantity })),
-          ecosystem: selectedNetwork()?.ecosystem ?? "",
+          token_symbol: selectedTokenSymbol(),
         }),
       });
       const body = await res.json();
@@ -268,19 +276,22 @@
         fetch("/api/catalog").then((r) => r.json()),
         fetch("/api/config").then((r) => r.json()),
       ]);
-      // One link stays inside one ecosystem, so the storefront chooses the rail
-      // and the buyer chooses the stablecoin on Givro's pay page.
+      // Storefront prices in one stablecoin. Chains stay on the Givro pay page.
+      tokenSymbols = Array.isArray(catalog.accepted_token_symbols) && catalog.accepted_token_symbols.length
+        ? catalog.accepted_token_symbols.map((s) => String(s).toUpperCase())
+        : ["USDC", "USDT"];
       networks = Array.isArray(catalog.networks) ? catalog.networks : [];
-      el.netSelect.innerHTML = "";
-      for (const network of networks) {
+      el.tokenSelect.innerHTML = "";
+      for (const symbol of tokenSymbols) {
         const option = document.createElement("option");
-        option.value = network.ecosystem;
-        option.textContent = network.label;
-        el.netSelect.appendChild(option);
+        option.value = symbol;
+        option.textContent = symbol;
+        el.tokenSelect.appendChild(option);
       }
-      el.netSelect.hidden = networks.length < 2;
-      if (catalog.default_ecosystem) el.netSelect.value = catalog.default_ecosystem;
-      currency = selectedNetwork()?.currency_label || String(catalog.currency || "").toUpperCase();
+      const preferred = String(catalog.default_token_symbol || "USDC").toUpperCase();
+      el.tokenSelect.value = tokenSymbols.includes(preferred) ? preferred : tokenSymbols[0];
+      el.tokenSelect.hidden = tokenSymbols.length < 2;
+      currency = selectedTokenSymbol();
       window.__products = catalog.products;
       window.__config = config;
       render(catalog.products);
@@ -296,12 +307,7 @@
   })();
 
   el.pay.addEventListener("click", checkout);
-  el.netSelect.addEventListener("change", () => {
-    currency = selectedNetwork()?.currency_label || currency;
-    render(window.__products || []);
-    renderCart(window.__products || []);
-    if (window.__config) renderHint(window.__config);
-  });
+  el.tokenSelect.addEventListener("change", applyCurrency);
 </script>
 </body>
 </html>
