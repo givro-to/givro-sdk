@@ -1,7 +1,27 @@
 {
-  "name": "givro-sdk",
+  "name": "@givro.to/givro-sdk",
   "version": "0.1.0",
   "description": "Givro SDK for identifier-routed EVM, Tron, and future Solana payment integrations",
+  "keywords": [
+    "givro",
+    "payments",
+    "crypto-payments",
+    "stablecoin",
+    "evm",
+    "tron",
+    "solana",
+    "web3",
+    "escrow"
+  ],
+  "homepage": "https://givro.to/sdk",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/givro-to/givro-sdk.git"
+  },
+  "bugs": {
+    "url": "https://github.com/givro-to/givro-sdk/issues"
+  },
+  "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -12,8 +32,14 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "src",
+    "README.md",
+    "LICENSE"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc",
     "prepublishOnly": "npm run build",
@@ -35,7 +61,6 @@
     "viem": "^2.21.0",
     "vitest": "^2.0.0"
   },
-  "license": "MIT",
   "engines": {
     "node": ">=18"
   }
