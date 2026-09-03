@@ -73,6 +73,23 @@ export interface CreatePaymentLinkBase {
    * 2048 characters; otherwise the portal refuses with `invalid_request`.
    */
   return_url?: string;
+  /**
+   * Every asset this link will take, when it should take more than one.
+   *
+   * The amount is stated once and means the same in all of them, so the entries
+   * are restricted to dollar-pegged stablecoins: 3.00 USDC and 3.00 USDT are the
+   * same price, the way paying by one card network or another is. Choosing
+   * between them is the payer's; an unpegged asset would make the amount itself
+   * a question and is refused with `invalid_request`.
+   *
+   * Omitted, the link takes only the `chainId` and token named above — which
+   * stay required either way, and name the asset the payer's page opens on. A
+   * list that leaves that pair out is refused: it would be a link opening on an
+   * asset its own quote declines.
+   */
+  accepted_assets?: ReadonlyArray<
+    { chain_id: number; ecosystem?: EnterpriseEcosystem } & EnterpriseTokenSelector
+  >;
   message?: string;
 }
 
