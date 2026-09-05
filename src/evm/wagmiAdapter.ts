@@ -8,12 +8,12 @@
  * Usage (React + wagmi v2):
  *
  *   const { sendTransactionAsync } = useSendTransaction();
- *   const txs = client.prepareEvmTransactions({ quote, depositContract });
+ *   const txs = client.prepareEvmTransactions({ quote });
  *   if (txs.approve) await sendTransactionAsync(toWagmiSendParams(txs.approve));
  *   await sendTransactionAsync(toWagmiSendParams(txs.deposit));
  */
 
-import type { EvmTxRequest } from "./prepareEvmDeposit.js";
+import type { EvmTxRequest } from "./escrow.js";
 import type { Address, Hex } from "viem";
 
 /** Shape accepted by wagmi v2 `useSendTransaction` / `sendTransactionAsync`. */
@@ -38,13 +38,6 @@ export function toWagmiSendParams(tx: EvmTxRequest, gas?: bigint): WagmiSendPara
 /**
  * EVM full send sequence: returns [approve?, deposit] as wagmi params.
  * Null approve means native token — skip it.
- *
- * Example:
- *   const steps = toWagmiSendSequence(txs);
- *   for (const step of steps) {
- *     const hash = await sendTransactionAsync(step);
- *     await waitForTransactionReceipt(publicClient, { hash });
- *   }
  */
 export function toWagmiSendSequence(txs: {
   approve: EvmTxRequest | null;

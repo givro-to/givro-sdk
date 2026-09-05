@@ -1,49 +1,45 @@
-// v2 intent-blinded escrow: the rail the portal actually funds today.
+// The Givro settlement escrow (`HfiPayIntentBlinded`): transaction builders
+// and the EIP-712 material a wallet needs to talk to it.
 //
-// v1 tagged every payment to a recipient with a stable on-chain `idHash`, so
-// two payments to the same person were linkable by anyone reading the chain.
-// v2 replaces that tag with a `blindedBinding` computed fresh per intent, which
-// is why the order tuple gained four fields and why the escrow rejects a
-// binding it has already seen.
+// Every payment commits a fresh `blindedBinding` derived per intent, so no
+// two payments to the same person share an on-chain tag. Deposit, cancel and
+// refund are plain calls. Claim is not built here: the escrow resolves no
+// recipient on its own, so a claim carries either a recipient signature over
+// `INTENT_CLAIM_TYPES` or a ZK proof, both produced per payment and
+// orchestrated by the portal's claim endpoints.
 //
-// Deposit, cancel and refund map mechanically from v1. **Claim does not**: v1
-// let anyone call `claim(paymentRef)` because the contract resolved the
-// recipient from an on-chain registry, and that registry is precisely what v2
-// removes. Every v2 claim carries a recipient signature or a ZK proof produced
-// per payment, so this module ships the EIP-712 material a wallet needs to
-// produce one and leaves the orchestration to the portal's claim endpoints.
-//
-// The ABI, the type strings and the domain are copied from the escrow that the
-// portal deploys. A drift in any of them yields signatures that verify nowhere
-// and calldata that reverts, so they are asserted against a live quote in
+// The ABI, the type strings and the domain are copied from the deployed
+// escrow. A drift in any of them yields signatures that verify nowhere and
+// calldata that reverts, so they are asserted against a live quote in
 // `tests/e2e/liveQuote.e2e.test.ts`.
 import { encodeFunctionData, erc20Abi, type Address, type Hex } from "viem";
 import { GivroPayBuildTxError } from "../errors.js";
-import type { EvmTxRequest } from "./prepareEvmDeposit.js";
+import type { EscrowOrder } from "../types.js";
 
-export const GIVRO_PAY_INTENT_BLINDED_ABI = [
+/** Sentinel for the native gas token in EVM order tuples. */
+export const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const;
+
+const ORDER_TUPLE = [
+  { name: "chainId", type: "uint256" },
+  { name: "paymentRef", type: "bytes32" },
+  { name: "intentId", type: "bytes32" },
+  { name: "blindedBinding", type: "bytes32" },
+  { name: "bindingEpoch", type: "uint64" },
+  { name: "claimAuthorization", type: "uint8" },
+  { name: "token", type: "address" },
+  { name: "amount", type: "uint256" },
+  { name: "cancelBefore", type: "uint64" },
+  { name: "claimBefore", type: "uint64" },
+  { name: "refundAfter", type: "uint64" },
+] as const;
+
+export const GIVRO_PAY_ESCROW_ABI = [
   {
     type: "function",
     name: "depositNativeWithOrder",
     stateMutability: "payable",
     inputs: [
-      {
-        name: "order",
-        type: "tuple",
-        components: [
-          { name: "chainId", type: "uint256" },
-          { name: "paymentRef", type: "bytes32" },
-          { name: "intentId", type: "bytes32" },
-          { name: "blindedBinding", type: "bytes32" },
-          { name: "bindingEpoch", type: "uint64" },
-          { name: "claimAuthorization", type: "uint8" },
-          { name: "token", type: "address" },
-          { name: "amount", type: "uint256" },
-          { name: "cancelBefore", type: "uint64" },
-          { name: "claimBefore", type: "uint64" },
-          { name: "refundAfter", type: "uint64" },
-        ],
-      },
+      { name: "order", type: "tuple", components: ORDER_TUPLE },
       { name: "mandateCommit", type: "bytes32" },
     ],
     outputs: [],
@@ -53,23 +49,7 @@ export const GIVRO_PAY_INTENT_BLINDED_ABI = [
     name: "depositErc20WithOrder",
     stateMutability: "nonpayable",
     inputs: [
-      {
-        name: "order",
-        type: "tuple",
-        components: [
-          { name: "chainId", type: "uint256" },
-          { name: "paymentRef", type: "bytes32" },
-          { name: "intentId", type: "bytes32" },
-          { name: "blindedBinding", type: "bytes32" },
-          { name: "bindingEpoch", type: "uint64" },
-          { name: "claimAuthorization", type: "uint8" },
-          { name: "token", type: "address" },
-          { name: "amount", type: "uint256" },
-          { name: "cancelBefore", type: "uint64" },
-          { name: "claimBefore", type: "uint64" },
-          { name: "refundAfter", type: "uint64" },
-        ],
-      },
+      { name: "order", type: "tuple", components: ORDER_TUPLE },
       { name: "mandateCommit", type: "bytes32" },
     ],
     outputs: [],
@@ -110,23 +90,6 @@ export const CLAIM_AUTHORIZATION = {
 export type ClaimAuthorization =
   (typeof CLAIM_AUTHORIZATION)[keyof typeof CLAIM_AUTHORIZATION];
 
-export interface IntentBlindedOrder {
-  chainId: bigint;
-  paymentRef: Hex;
-  /** Per-payment identifier, bound into every claim digest for this vault. */
-  intentId: Hex;
-  /** Fresh per intent. The escrow rejects a value it has already seen. */
-  blindedBinding: Hex;
-  bindingEpoch: bigint;
-  claimAuthorization: ClaimAuthorization;
-  token: Address;
-  amount: bigint;
-  /** 0 waives the payer's cancel window entirely. */
-  cancelBefore: bigint;
-  claimBefore: bigint;
-  refundAfter: bigint;
-}
-
 /**
  * The mandate a recipient signs to name where their payments land. Mirrors the
  * escrow's `PAYOUT_MANDATE_TYPEHASH`; the strings are load-bearing.
@@ -155,16 +118,24 @@ export const INTENT_CLAIM_TYPES = {
 
 /**
  * EIP-712 domain for both type sets above. `verifyingContract` is the escrow
- * from the quote's `intentBlinded.escrow`, which an integrator should have
- * pinned at onboarding rather than adopted from the quote at runtime.
+ * the integrator pinned at onboarding.
  */
-export const intentBlindedDomain = (chainId: number, escrow: Address) =>
+export const escrowDomain = (chainId: number, escrow: Address) =>
   ({
     name: "HfiPayIntentBlinded",
     version: "1",
     chainId,
     verifyingContract: escrow,
   }) as const;
+
+export interface EvmTxRequest {
+  to: Address;
+  data: Hex;
+  value: bigint;
+}
+
+/** An `EscrowOrder` whose token is already a checksummable EVM address. */
+export type EvmEscrowOrder = Omit<EscrowOrder, "token"> & { token: Address };
 
 function assertCanonicalNonZeroContract(address: string, fieldName: string): void {
   if (!/^0x[0-9a-fA-F]{40}$/.test(address) || /^0x0{40}$/i.test(address)) {
@@ -173,7 +144,24 @@ function assertCanonicalNonZeroContract(address: string, fieldName: string): voi
 }
 
 export function isNativeEvmToken(token: string): boolean {
-  return token.toLowerCase() === "0x0000000000000000000000000000000000000000";
+  const t = token.toLowerCase();
+  return t === ZERO_ADDRESS || t === "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+}
+
+function encodeOrder(order: EvmEscrowOrder) {
+  return {
+    chainId: order.chainId,
+    paymentRef: order.paymentRef,
+    intentId: order.intentId,
+    blindedBinding: order.blindedBinding,
+    bindingEpoch: order.bindingEpoch,
+    claimAuthorization: order.claimAuthorization,
+    token: order.token,
+    amount: order.amount,
+    cancelBefore: order.cancelBefore,
+    claimBefore: order.claimBefore,
+    refundAfter: order.refundAfter,
+  };
 }
 
 /**
@@ -182,9 +170,9 @@ export function isNativeEvmToken(token: string): boolean {
  * not — a zero commitment is legal and marks the vault as one that cannot be
  * settled unattended, only claimed with the recipient's own signature.
  */
-export function buildIntentBlindedNativeDeposit(params: {
+export function buildEvmNativeDeposit(params: {
   escrow: Address;
-  order: IntentBlindedOrder;
+  order: EvmEscrowOrder;
   mandateCommit: Hex;
 }): EvmTxRequest {
   assertCanonicalNonZeroContract(params.escrow, "escrow");
@@ -195,17 +183,17 @@ export function buildIntentBlindedNativeDeposit(params: {
     to: params.escrow,
     value: params.order.amount,
     data: encodeFunctionData({
-      abi: GIVRO_PAY_INTENT_BLINDED_ABI,
+      abi: GIVRO_PAY_ESCROW_ABI,
       functionName: "depositNativeWithOrder",
-      args: [params.order, params.mandateCommit],
+      args: [encodeOrder(params.order), params.mandateCommit],
     }),
   };
 }
 
 /** ERC-20 deposit: approve first, then deposit. Both must be broadcast, in order. */
-export function buildIntentBlindedErc20Deposit(params: {
+export function buildEvmErc20Deposit(params: {
   escrow: Address;
-  order: IntentBlindedOrder;
+  order: EvmEscrowOrder;
   mandateCommit: Hex;
   /** Explicit override. Defaults to the exact deposit amount. */
   approveAmount?: bigint;
@@ -229,36 +217,36 @@ export function buildIntentBlindedErc20Deposit(params: {
       to: params.escrow,
       value: 0n,
       data: encodeFunctionData({
-        abi: GIVRO_PAY_INTENT_BLINDED_ABI,
+        abi: GIVRO_PAY_ESCROW_ABI,
         functionName: "depositErc20WithOrder",
-        args: [params.order, params.mandateCommit],
+        args: [encodeOrder(params.order), params.mandateCommit],
       }),
     },
   };
 }
 
-/** Payer-only, and only inside the cancel window. Same shape as v1. */
-export function buildIntentBlindedCancelTx(params: { escrow: Address; paymentRef: Hex }): EvmTxRequest {
+/** Payer-only, and only inside the cancel window. */
+export function buildEvmCancelTx(params: { escrow: Address; paymentRef: Hex }): EvmTxRequest {
   assertCanonicalNonZeroContract(params.escrow, "escrow");
   return {
     to: params.escrow,
     value: 0n,
     data: encodeFunctionData({
-      abi: GIVRO_PAY_INTENT_BLINDED_ABI,
+      abi: GIVRO_PAY_ESCROW_ABI,
       functionName: "cancelByPayer",
       args: [params.paymentRef],
     }),
   };
 }
 
-/** Permissionless once `refundAfter` has passed. Same shape as v1. */
-export function buildIntentBlindedRefundTx(params: { escrow: Address; paymentRef: Hex }): EvmTxRequest {
+/** Permissionless once `refundAfter` has passed; funds return to the payer. */
+export function buildEvmRefundTx(params: { escrow: Address; paymentRef: Hex }): EvmTxRequest {
   assertCanonicalNonZeroContract(params.escrow, "escrow");
   return {
     to: params.escrow,
     value: 0n,
     data: encodeFunctionData({
-      abi: GIVRO_PAY_INTENT_BLINDED_ABI,
+      abi: GIVRO_PAY_ESCROW_ABI,
       functionName: "refund",
       args: [params.paymentRef],
     }),

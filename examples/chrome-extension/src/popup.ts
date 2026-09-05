@@ -9,7 +9,7 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import {
-  createHfiPayClient,
+  createGivroPayClient,
   isNativeEvmToken,
   ZERO_ADDRESS,
 } from "../../../src/index.js";
@@ -56,7 +56,7 @@ const settingsPanel  = $("settings");
 
 rpcInput.value      = load(KEYS.rpc,      "http://localhost:9545");
 portalInput.value   = load(KEYS.portal,   "http://localhost:3100");
-chainIdInput.value  = load(KEYS.chainId,  "31337");
+chainIdInput.value  = load(KEYS.chainId,  "31338");
 contractInput.value = load(KEYS.contract, "");
 privKeyInput.value  = load(KEYS.privKey,  "");
 
@@ -93,7 +93,7 @@ function getClients() {
   const rpc = rpcInput.value.trim() || "http://localhost:9545";
   const pk  = privKeyInput.value.trim() as Hex;
   if (!pk || !pk.startsWith("0x") || pk.length < 10) return null;
-  const chainId = Number(chainIdInput.value.trim()) || 31337;
+  const chainId = Number(chainIdInput.value.trim()) || 31338;
   const account = privateKeyToAccount(pk);
   const transport = http(rpc);
   const chain = {
@@ -137,7 +137,7 @@ async function handleSend() {
   if (!ctx) { showStatus("Enter your private key in settings.", "err"); return; }
 
   const portal   = portalInput.value.trim().replace(/\/$/, "") || "http://localhost:3100";
-  const chainId  = Number(chainIdInput.value.trim()) || 31337;
+  const chainId  = Number(chainIdInput.value.trim()) || 31338;
   const token    = tokenInput.value.trim() || "GO";
   const kind     = recipientKind.value as "email" | "x" | "phone";
   const recipient = recipientInput.value.trim();
@@ -160,7 +160,7 @@ async function handleSend() {
     if (!/^0x[0-9a-fA-F]{40}$/.test(trustedContract)) {
       throw new Error("Set the build-reviewed deposit contract in Settings before sending.");
     }
-    const client = createHfiPayClient({
+    const client = createGivroPayClient({
       quoteUrl: `${portal}/api/intent/quote`,
       portalBaseUrl: portal,
       trustedAttestedContracts: { [`evm:${chainId}`]: [trustedContract] },

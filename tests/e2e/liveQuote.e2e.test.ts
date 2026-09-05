@@ -2,10 +2,9 @@
 // quote comes from the portal, the escrow address comes from that quote, and
 // the transaction the SDK builds is submitted to the node with `eth_call`.
 //
-// This suite exists because the SDK's hermetic tests could not have caught the
-// defect it was written for. They asserted the SDK agreed with itself, and it
-// did -- it parsed a v2 quote cleanly and produced a v1 transaction that only
-// failed once broadcast. Only the chain could say so.
+// The hermetic tests can only assert that the SDK agrees with itself. Only the
+// chain can say whether the calldata the SDK produces is what the deployed
+// escrow accepts.
 //
 //   GIVRO_E2E_PORTAL_URL=http://127.0.0.1:3100 \
 //   GIVRO_E2E_RPC_URL=http://127.0.0.1:8545 \
@@ -15,9 +14,8 @@ import { decodeFunctionData } from "viem";
 import { coercePaymentQuote } from "../../src/quote.js";
 import { createGivroPayClient } from "../../src/client.js";
 import { buildEvmDepositFromQuote } from "../../src/evm/depositFromQuote.js";
-import { buildEvmAttestedDepositRequest } from "../../src/evm/prepareEvmDeposit.js";
 import { fetchPublicSupportedAssets } from "../../src/supportedAssets.js";
-import { GIVRO_PAY_INTENT_BLINDED_ABI } from "../../src/evm/prepareIntentBlindedDeposit.js";
+import { GIVRO_PAY_ESCROW_ABI } from "../../src/evm/escrow.js";
 
 const PORTAL = process.env.GIVRO_E2E_PORTAL_URL;
 const RPC = process.env.GIVRO_E2E_RPC_URL;
@@ -58,63 +56,35 @@ async function freshQuote(token = NATIVE, amountWei = "1000000000000000") {
       chainId: CHAIN_ID,
       ecosystem: "evm",
       // Accepted only when the portal is non-production and has explicitly
-      // opted in; a deployed portal rejects it.
-      turnstile: "local-bypass",
+      // disabled Turnstile for local runs.
+      turnstile: "",
     }),
   });
-  const raw = (await res.json()) as Record<string, unknown>;
-  if (!res.ok) throw new Error(`quote failed ${res.status}: ${JSON.stringify(raw)}`);
-  return raw;
+  const json = (await res.json()) as Record<string, unknown>;
+  if (!res.ok) throw new Error(`quote failed: ${JSON.stringify(json)}`);
+  return json;
 }
 
-describeLive("live portal", () => {
+describeLive("SDK against a live portal + chain", () => {
   beforeAll(async () => {
-    const res = await fetch(`${PORTAL}/api/public/supported-assets`);
-    if (!res.ok) throw new Error(`portal unreachable: ${res.status}`);
+    const chain = await rpc("eth_chainId", []);
+    expect(Number(chain.result)).toBe(CHAIN_ID);
   });
 
-  it("parses the portal's published asset config", async () => {
-    const config = await fetchPublicSupportedAssets(PORTAL!);
-    expect(config.chains.length).toBeGreaterThan(0);
-    const chain = config.chains.find((c) => "chainId" in c && c.chainId === CHAIN_ID);
-    expect(chain, `chain ${CHAIN_ID} is not in the portal's published config`).toBeDefined();
-    expect(chain!.tokens.length).toBeGreaterThan(0);
-  });
-
-  it("publishes the same escrow it issues quotes against", async () => {
-    // The whole point of the published registry: an integrator reads it at
-    // onboarding, reviews the address independently, and pins it. That only
-    // works if it is the address the money actually goes to. For a while it
-    // was not published at all, and the docs still told integrators to pin it.
+  it("publishes the same escrow in discovery that it settles quotes on", async () => {
     const config = await fetchPublicSupportedAssets(PORTAL!);
     const chain = config.chains.find((c) => "chainId" in c && c.chainId === CHAIN_ID);
     const published = (chain as { attestedContract?: string } | undefined)?.attestedContract;
     expect(published, "the portal publishes no settlement contract to pin").toBeDefined();
 
     const q = coercePaymentQuote(await freshQuote());
-    expect(published!.toLowerCase()).toBe(q.intentBlinded!.escrow.toLowerCase());
-  });
-
-  it("reads a live quote as v2 and rejects the retired v1 fields", async () => {
-    const raw = await freshQuote();
-    const q = coercePaymentQuote(raw);
-    expect(q.protocolVersion).toBe(2);
-    expect(q.intentBlinded?.escrow).toMatch(/^0x[0-9a-fA-F]{40}$/);
-    // The portal still emits both, and `attestedContract` is the v2 escrow.
-    expect(raw.order).toBeDefined();
-    expect(raw.attestedContract).toBe(q.intentBlinded!.escrow);
-    expect(q.depositContract).toBeUndefined();
-    expect(q.attestedOrder).toBeUndefined();
+    expect(published!.toLowerCase()).toBe(q.attestedContract.toLowerCase());
   });
 
   it("builds a native deposit the escrow accepts", async () => {
     const raw = await freshQuote();
     const q = coercePaymentQuote(raw);
-    const plan = buildEvmDepositFromQuote({
-      quote: q,
-      pinnedEscrow: q.intentBlinded!.escrow as `0x${string}`,
-    });
-    expect(plan.protocolVersion).toBe(2);
+    const plan = buildEvmDepositFromQuote({ quote: q, pinnedEscrow: q.attestedContract });
     expect(plan.steps).toHaveLength(1);
 
     // Two separate claims, because `eth_call` alone proves less than it looks.
@@ -125,13 +95,10 @@ describeLive("live portal", () => {
     expect(out.error, `escrow rejected the SDK's deposit: ${out.error?.message}`).toBeUndefined();
 
     // So the values are checked directly, against the quote the portal issued.
-    const decoded = decodeFunctionData({
-      abi: GIVRO_PAY_INTENT_BLINDED_ABI,
-      data: plan.steps[0]!.data as `0x${string}`,
-    });
+    const decoded = decodeFunctionData({ abi: GIVRO_PAY_ESCROW_ABI, data: plan.steps[0]!.data as `0x${string}` });
     expect(decoded.functionName).toBe("depositNativeWithOrder");
     const [order, mandateCommit] = decoded.args as unknown as [Record<string, unknown>, string];
-    const issued = q.intentBlinded!.order;
+    const issued = q.order;
     expect(order.chainId).toBe(issued.chainId);
     expect(order.paymentRef).toBe(issued.paymentRef);
     expect(order.intentId).toBe(issued.intentId);
@@ -143,67 +110,18 @@ describeLive("live portal", () => {
     expect(order.cancelBefore).toBe(issued.cancelBefore);
     expect(order.claimBefore).toBe(issued.claimBefore);
     expect(order.refundAfter).toBe(issued.refundAfter);
-    expect(mandateCommit).toBe(q.intentBlinded!.mandateCommit);
+    expect(mandateCommit).toBe(q.mandateCommit);
   });
 
-  it("would have reverted on the v1 rail -- which is why the parser refuses it", async () => {
-    // The regression witness. Rebuilding the pre-fix behaviour by hand shows
-    // what a v1 integrator got from a v2 quote: a well-formed transaction,
-    // aimed at a real contract, that the chain throws out. If this ever stops
-    // reverting, the two rails have converged and the refusal above should be
-    // revisited rather than left in place on a stale assumption.
-    const raw = await freshQuote();
-    const legacy = raw.order as Record<string, string>;
-    const doomed = buildEvmAttestedDepositRequest({
-      depositContract: raw.attestedContract as `0x${string}`,
-      order: {
-        chainId: BigInt(legacy.chainId),
-        paymentRef: legacy.paymentRef as `0x${string}`,
-        idHash: legacy.idHash as `0x${string}`,
-        token: legacy.token as `0x${string}`,
-        amount: BigInt(legacy.amount),
-        cancelBefore: BigInt(legacy.cancelBefore),
-        claimBefore: BigInt(legacy.claimBefore),
-        refundAfter: BigInt(legacy.refundAfter),
-      },
-    });
-    const out = await ethCall(doomed);
-    expect(out.error?.message ?? "").toMatch(/revert/i);
-  });
-
-  it("carries a live quote through the documented entry point onto the chain", async () => {
-    // The README tells integrators to call `prepareEvmTransactions`. This is
-    // that exact path, from a real quote to a call the real escrow accepts --
-    // no builder chosen by hand, no shape assumed.
-    const raw = await freshQuote();
-    const q = coercePaymentQuote(raw);
+  it("routes the documented entry point to the pinned escrow", async () => {
+    const q = coercePaymentQuote(await freshQuote());
     const client = createGivroPayClient({
       quoteUrl: `${PORTAL}/api/intent/quote`,
-      trustedAttestedContracts: { [`evm:${CHAIN_ID}`]: [q.intentBlinded!.escrow] },
+      trustedAttestedContracts: { [`evm:${CHAIN_ID}`]: [q.attestedContract] },
     });
     const { approve, deposit } = client.prepareEvmTransactions({ quote: q });
     expect(approve).toBeNull();
     const out = await ethCall(deposit);
-    expect(out.error, `escrow rejected the client's deposit: ${out.error?.message}`).toBeUndefined();
-  });
-
-  it("plans approve-then-deposit for an ERC-20 quote", async () => {
-    const config = await fetchPublicSupportedAssets(PORTAL!);
-    const chain = config.chains.find((c) => "chainId" in c && c.chainId === CHAIN_ID)!;
-    const erc20 = chain.tokens.find((t) => !("native" in t && t.native));
-    if (!erc20) return; // chain publishes no ERC-20; nothing to assert
-    const address = (erc20 as { address?: string }).address!;
-    const q = coercePaymentQuote(await freshQuote(address, "1000000"));
-    const plan = buildEvmDepositFromQuote({
-      quote: q,
-      pinnedEscrow: q.intentBlinded!.escrow as `0x${string}`,
-    });
-    // Not submitted: the deposit needs the approve mined first, so `eth_call`
-    // against current state would revert for a reason unrelated to the SDK.
-    expect(plan.steps).toHaveLength(2);
-    const [approve, deposit] = plan.steps as [typeof plan.steps[0], typeof plan.steps[0]];
-    expect(approve.to.toLowerCase()).toBe(address.toLowerCase());
-    expect(deposit.to).toBe(q.intentBlinded!.escrow);
-    expect(deposit.value).toBe(0n);
+    expect(out.error, `escrow rejected the SDK's deposit: ${out.error?.message}`).toBeUndefined();
   });
 });

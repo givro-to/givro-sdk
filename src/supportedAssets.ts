@@ -16,7 +16,7 @@ export interface PublicEvmAsset {
 
 export interface PublicSolanaAsset {
   symbol: string;
-  /** Registry mint/marker only; it does not establish a trusted Program ID or a complete native-SOL funding path. */
+  /** Registry mint/marker only. The SDK ships no Solana funding path; the portal does not serve Solana. */
   mint: string;
   decimals: number;
   native?: boolean;
@@ -147,8 +147,8 @@ function coercePublicSupportedAssets(value: unknown): PublicSupportedAssetsConfi
 /**
  * Fetch the Portal's authoritative runtime chain/token/deployment discovery.
  *
- * Security boundary: `attestedContract` is onboarding/build-time discovery
- * material. Review it independently and pin the approved value in
+ * Security boundary: `attestedContract` is the settlement escrow the portal
+ * publishes for that chain. It is onboarding/build-time discovery material. Review it independently and pin the approved value in
  * `trustedAttestedContracts`. Never fetch this response next to each quote and
  * dynamically trust the same Portal's address, which would defeat independent
  * settlement-contract pinning.

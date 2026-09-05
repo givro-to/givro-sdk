@@ -1,239 +1,128 @@
 import { describe, expect, it, vi } from "vitest";
 import { GivroPayClient } from "../src/client.js";
 import { GivroPayBuildTxError, GivroPayQuoteError } from "../src/errors.js";
-import type { PaymentQuote } from "../src/types.js";
-import type { QuoteRequestBody } from "../src/types.js";
+import type { PaymentQuote, QuoteRequestBody } from "../src/types.js";
+
+const REF = ("0x" + "ab".repeat(32)) as `0x${string}`;
+const ESCROW = "0xdeadbeef00000000000000000000000000000002";
+const USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
+
+function quote(overrides: Partial<PaymentQuote> & { token?: string } = {}): PaymentQuote {
+  const token = overrides.token ?? USDC;
+  const chainId = overrides.chainId ?? 11155111;
+  const ecosystem = overrides.ecosystem ?? "evm";
+  return {
+    paymentRef: REF,
+    amount: "1000000",
+    token,
+    ecosystem,
+    chainId,
+    attestedContract: ESCROW,
+    mandateCommit: ("0x" + "00".repeat(32)) as `0x${string}`,
+    order: {
+      chainId: BigInt(chainId),
+      paymentRef: REF,
+      intentId: ("0x" + "11".repeat(32)) as `0x${string}`,
+      blindedBinding: ("0x" + "22".repeat(32)) as `0x${string}`,
+      bindingEpoch: 1n,
+      claimAuthorization: 0,
+      token,
+      amount: 1000000n,
+      cancelBefore: 1n,
+      claimBefore: 2n,
+      refundAfter: 3n,
+    },
+    ...overrides,
+  };
+}
+
+/** A raw portal response for `chainId`, in the wire shape `coercePaymentQuote` reads. */
+function rawQuote(p: { ecosystem: "evm" | "tron"; chainId: number; token: string; amountWei: string }) {
+  return {
+    paymentRef: REF,
+    ecosystem: p.ecosystem,
+    chainId: p.chainId,
+    token: p.token,
+    amountWei: p.amountWei,
+    attestedContract: ESCROW,
+    intentBlinded: {
+      escrow: ESCROW,
+      mandateCommit: "0x" + "00".repeat(32),
+      order: {
+        chainId: p.chainId,
+        paymentRef: REF,
+        intentId: "0x" + "11".repeat(32),
+        blindedBinding: "0x" + "22".repeat(32),
+        bindingEpoch: "1",
+        claimAuthorization: 0,
+        token: p.token,
+        amount: p.amountWei,
+        cancelBefore: "1700000000",
+        claimBefore: "1700000600",
+        refundAfter: "1700003660",
+      },
+    },
+  };
+}
+
+function okJson(json: unknown): Response {
+  return { ok: true, status: 200, text: () => Promise.resolve(""), json: () => Promise.resolve(json) } as unknown as Response;
+}
 
 describe("GivroPayClient.prepareEvmTransactions", () => {
-  const attestedContract = "0xdeadbeef00000000000000000000000000000002";
   const client = new GivroPayClient({
     quoteUrl: "https://example.com/quote",
-    trustedAttestedContracts: { "evm:11155111": [attestedContract] },
+    trustedAttestedContracts: { "evm:11155111": [ESCROW] },
   });
 
-  it("builds attested transactions when quote has attested fields", () => {
-    const quote: PaymentQuote = {
-      protocolVersion: 1,
-      paymentRef: ("0x" + "ab".repeat(32)) as `0x${string}`,
-      amount: "1000000",
-      token: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-      ecosystem: "evm",
-      chainId: 11155111,
-      attestedContract,
-      attestedOrder: {
-        chainId: 11155111n,
-        paymentRef: ("0x" + "ab".repeat(32)) as `0x${string}`,
-        idHash: ("0x" + "cd".repeat(32)) as `0x${string}`,
-        token: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-        amount: 1000000n,
-        cancelBefore: 1n,
-        claimBefore: 2n,
-        refundAfter: 3n,
-      },
-    };
-    const { approve, deposit } = client.prepareEvmTransactions({ quote });
+  it("builds approve + deposit for an ERC-20 quote against the pinned escrow", () => {
+    const { approve, deposit } = client.prepareEvmTransactions({ quote: quote() });
     expect(approve).not.toBeNull();
-    expect(BigInt(`0x${approve!.data.slice(-64)}`)).toBe(quote.attestedOrder!.amount);
-    expect(deposit.to.toLowerCase()).toBe(quote.attestedContract!.toLowerCase());
+    expect(BigInt(`0x${approve!.data.slice(-64)}`)).toBe(1000000n);
+    expect(deposit.to.toLowerCase()).toBe(ESCROW);
   });
 
-  it("throws a readable error when attested order fields are incomplete", () => {
-    const quote: PaymentQuote = {
-      protocolVersion: 1,
-      paymentRef: ("0x" + "ab".repeat(32)) as `0x${string}`,
-      amount: "1000000",
-      token: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-      ecosystem: "evm",
-      chainId: 11155111,
-      attestedContract,
-      attestedOrder: {
-        chainId: 11155111n,
-        paymentRef: ("0x" + "ab".repeat(32)) as `0x${string}`,
-        idHash: "" as `0x${string}`,
-        token: "" as `0x${string}`,
-        amount: 1000000n,
-        cancelBefore: 1n,
-        claimBefore: 2n,
-        refundAfter: 3n,
-      },
-    };
-    expect(() => client.prepareEvmTransactions({ quote })).toThrow(/attested quote missing order/i);
+  it("builds a single native deposit carrying the amount as value", () => {
+    const native = "0x0000000000000000000000000000000000000000";
+    const { approve, deposit } = client.prepareEvmTransactions({ quote: quote({ token: native }) });
+    expect(approve).toBeNull();
+    expect(deposit.value).toBe(1000000n);
   });
 
-  it("throws a readable error when attested quote is missing idHash", () => {
-    const quote = {
-      paymentRef: ("0x" + "ab".repeat(32)) as `0x${string}`,
-      amount: "1000000",
-      token: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-      ecosystem: "evm" as const,
-      chainId: 11155111,
-      attestedContract: attestedContract as `0x${string}`,
-      attestedOrder: {
-        chainId: 11155111n,
-        paymentRef: ("0x" + "ab".repeat(32)) as `0x${string}`,
-        token: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" as `0x${string}`,
-        amount: 1000000n,
-        cancelBefore: 1n,
-        claimBefore: 2n,
-        refundAfter: 3n,
-      },
-    } as unknown as PaymentQuote;
-    expect(() => client.prepareEvmTransactions({ quote })).toThrow(/idHash/i);
+  it("rejects a quote whose escrow is not pinned", () => {
+    expect(() => client.prepareEvmTransactions({ quote: quote({ attestedContract: "0xdeadbeef00000000000000000000000000000003" }) }))
+      .toThrow(GivroPayQuoteError);
   });
 
-  it("rejects legacy/basic EVM quotes on the default transaction builder", () => {
-    const quote: PaymentQuote = {
-      protocolVersion: 1,
-      paymentRef: ("0x" + "ab".repeat(32)) as `0x${string}`,
-      amount: "1000000",
-      token: "0x0000000000000000000000000000000000000000",
-      ecosystem: "evm",
-      chainId: 11155111,
-      depositContract: "0xdeadbeef00000000000000000000000000000001",
-    };
-    expect(() => client.prepareEvmTransactions({ quote })).toThrow(GivroPayBuildTxError);
-  });
-
-  it("rejects attested quotes when top-level token differs from order token", () => {
-    const quote: PaymentQuote = {
-      protocolVersion: 1,
-      paymentRef: ("0x" + "ab".repeat(32)) as `0x${string}`,
-      amount: "1000000",
-      token: "0x0000000000000000000000000000000000000000",
-      ecosystem: "evm",
-      chainId: 11155111,
-      attestedContract,
-      attestedOrder: {
-        chainId: 11155111n,
-        paymentRef: ("0x" + "ab".repeat(32)) as `0x${string}`,
-        idHash: ("0x" + "cd".repeat(32)) as `0x${string}`,
-        token: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-        amount: 1000000n,
-        cancelBefore: 1n,
-        claimBefore: 2n,
-        refundAfter: 3n,
-      },
-    };
-    expect(() => client.prepareEvmTransactions({ quote })).toThrow(/token mismatch/i);
-  });
-
-  it("rejects quotes that point at an untrusted settlement contract", () => {
-    const quote: PaymentQuote = {
-      protocolVersion: 1,
-      paymentRef: ("0x" + "ab".repeat(32)) as `0x${string}`,
-      amount: "1000000",
-      token: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-      ecosystem: "evm",
-      chainId: 11155111,
-      attestedContract: "0xdeadbeef00000000000000000000000000000003",
-      attestedOrder: {
-        chainId: 11155111n,
-        paymentRef: ("0x" + "ab".repeat(32)) as `0x${string}`,
-        idHash: ("0x" + "cd".repeat(32)) as `0x${string}`,
-        token: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-        amount: 1000000n,
-        cancelBefore: 1n,
-        claimBefore: 2n,
-        refundAfter: 3n,
-      },
-    };
-    expect(() => client.prepareEvmTransactions({ quote })).toThrow(GivroPayQuoteError);
-  });
-
-  it("rejects a zero settlement contract even when it is pinned", () => {
+  it("rejects a zero escrow even when it is pinned", () => {
     const zero = "0x0000000000000000000000000000000000000000";
-    const zeroPinnedClient = new GivroPayClient({
+    const zeroPinned = new GivroPayClient({
       quoteUrl: "https://example.com/quote",
       trustedAttestedContracts: { "evm:11155111": [zero] },
     });
-    const quote: PaymentQuote = {
-      protocolVersion: 1,
-      paymentRef: ("0x" + "ab".repeat(32)) as `0x${string}`,
-      amount: "1",
-      token: zero,
-      ecosystem: "evm",
-      chainId: 11155111,
-      attestedContract: zero,
-      attestedOrder: {
-        chainId: 11155111n,
-        paymentRef: ("0x" + "ab".repeat(32)) as `0x${string}`,
-        idHash: ("0x" + "cd".repeat(32)) as `0x${string}`,
-        token: zero,
-        amount: 1n,
-        cancelBefore: 1n,
-        claimBefore: 2n,
-        refundAfter: 3n,
-      },
-    };
-    expect(() => zeroPinnedClient.prepareEvmTransactions({ quote }))
+    expect(() => zeroPinned.prepareEvmTransactions({ quote: quote({ attestedContract: zero }) }))
       .toThrow(/canonical non-zero address/i);
   });
 
-  it("rejects top-level and on-chain order amount mismatches", () => {
-    const quote: PaymentQuote = {
-      protocolVersion: 1,
-      paymentRef: ("0x" + "ab".repeat(32)) as `0x${string}`,
-      amount: "999999",
-      token: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-      ecosystem: "evm",
-      chainId: 11155111,
-      attestedContract,
-      attestedOrder: {
-        chainId: 11155111n,
-        paymentRef: ("0x" + "ab".repeat(32)) as `0x${string}`,
-        idHash: ("0x" + "cd".repeat(32)) as `0x${string}`,
-        token: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-        amount: 1000000n,
-        cancelBefore: 1n,
-        claimBefore: 2n,
-        refundAfter: 3n,
-      },
-    };
-    expect(() => client.prepareEvmTransactions({ quote })).toThrow(/amount mismatch/i);
+  it("rejects a Tron quote on the EVM builder", () => {
+    expect(() => client.prepareEvmTransactions({ quote: quote({ ecosystem: "tron", chainId: 728126428, token: "native" }) }))
+      .toThrow(GivroPayBuildTxError);
   });
 });
 
-describe("GivroPayClient.fetchQuote (Tron)", () => {
-  it("posts to /api/intent/quote derived from portalBaseUrl", async () => {
-    const mockFetch = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      text: () => Promise.resolve(""),
-      json: () =>
-        Promise.resolve({
-          paymentRef: "0x" + "ab".repeat(32),
-          ecosystem: "tron",
-          chainId: 728126428,
-          token: "T1",
-          amount: "1000000",
-          attestedContract: "0xdeadbeef00000000000000000000000000000002",
-          order: {
-            chainId: 728126428,
-            paymentRef: "0x" + "ab".repeat(32),
-            idHash: "0x" + "cd".repeat(32),
-            token: "T1",
-            amount: "1000000",
-            cancelBefore: "1700000000",
-            claimBefore: "1700000600",
-            refundAfter: "1700003660",
-          },
-        }),
-    } as unknown as Response);
-
+describe("GivroPayClient.fetchQuote", () => {
+  it("posts Tron quotes to /api/intent/quote derived from portalBaseUrl", async () => {
+    const mockFetch = vi.fn().mockResolvedValue(okJson(rawQuote({
+      ecosystem: "tron", chainId: 728126428, token: "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf", amountWei: "1000000",
+    })));
     const client = new GivroPayClient({
       quoteUrl: "https://sandbox.example.com/api/intent/quote",
       portalBaseUrl: "https://sandbox.example.com",
       fetchImpl: mockFetch,
     });
-
     const body: QuoteRequestBody = {
-      identifier: "u@x.co",
-      identifierKind: "email",
-      amountWei: "1000000",
-      token: "T1",
-      vm: "tron",
-      chainId: 728126428,
-      turnstile: "",
+      identifier: "u@x.co", identifierKind: "email", amountWei: "1000000",
+      token: "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf", vm: "tron", chainId: 728126428, turnstile: "",
     };
     await client.fetchQuote(body);
     const [url] = mockFetch.mock.calls[0] as [string, RequestInit];
@@ -241,63 +130,56 @@ describe("GivroPayClient.fetchQuote (Tron)", () => {
   });
 
   it("canonicalizes TRX before sending and accepts the canonical native response", async () => {
-    const mockFetch = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      text: () => Promise.resolve(""),
-      json: () => Promise.resolve({
-        paymentRef: "0x" + "ab".repeat(32),
-        ecosystem: "tron",
-        chainId: 728126428,
-        token: "native",
-        amountWei: "1000000",
-        amount: "1",
-      }),
-    } as unknown as Response);
-    const client = new GivroPayClient({
-      quoteUrl: "https://example.com/api/intent/quote",
-      fetchImpl: mockFetch,
+    const mockFetch = vi.fn().mockResolvedValue(okJson(rawQuote({
+      ecosystem: "tron", chainId: 728126428, token: "native", amountWei: "1000000",
+    })));
+    const client = new GivroPayClient({ quoteUrl: "https://example.com/api/intent/quote", fetchImpl: mockFetch });
+    const q = await client.fetchQuote({
+      identifier: "u@x.co", identifierKind: "email", amountWei: "1000000", amount: "1",
+      token: "TRX", vm: "tron", chainId: 728126428,
     });
-    await client.fetchQuote({
-      identifier: "u@x.co",
-      identifierKind: "email",
-      amountWei: "1000000",
-      amount: "1",
-      token: "TRX",
-      vm: "tron",
-      chainId: 728126428,
-    });
+    expect(q.token).toBe("native");
     const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
     expect(JSON.parse(String(init.body)).token).toBe("native");
   });
 
-  it("matches canonical Tron hex contract pins case-insensitively", () => {
+  it("canonicalizes ETH and matches a zero-address EVM response", async () => {
+    const native = "0x0000000000000000000000000000000000000000";
+    const mockFetch = vi.fn().mockResolvedValue(okJson(rawQuote({ ecosystem: "evm", chainId: 8453, token: native, amountWei: "1" })));
+    const client = new GivroPayClient({ quoteUrl: "https://example.com/quote", fetchImpl: mockFetch });
+    await expect(client.fetchQuote({
+      identifier: "u@x.co", identifierKind: "email", amountWei: "1", token: "ETH", vm: "evm", chainId: 8453,
+    })).resolves.toMatchObject({ token: native });
+    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(String(init.body)).token).toBe(native);
+  });
+
+  it("rejects a quote whose chain, token or amount differ from the request", async () => {
+    const native = "0x0000000000000000000000000000000000000000";
+    const client = (json: unknown) => new GivroPayClient({
+      quoteUrl: "https://example.com/quote", fetchImpl: vi.fn().mockResolvedValue(okJson(json)),
+    });
+    const base = { identifier: "u@x.co", identifierKind: "email" as const, amountWei: "1", token: "ETH", vm: "evm" as const, chainId: 8453 };
+    await expect(client(rawQuote({ ecosystem: "evm", chainId: 56, token: native, amountWei: "1" })).fetchQuote(base))
+      .rejects.toThrow(/chainId does not match/);
+    await expect(client(rawQuote({ ecosystem: "evm", chainId: 8453, token: USDC, amountWei: "1" })).fetchQuote(base))
+      .rejects.toThrow(/token does not match/);
+    await expect(client(rawQuote({ ecosystem: "evm", chainId: 8453, token: native, amountWei: "2" })).fetchQuote(base))
+      .rejects.toThrow(/amount does not match/);
+  });
+});
+
+describe("GivroPayClient.tronDepositCall", () => {
+  it("matches canonical Tron hex escrow pins case-insensitively", () => {
     const pinned = new GivroPayClient({
       quoteUrl: "https://example.com/api/intent/quote",
-      trustedAttestedContracts: {
-        "tron:728126428": ["0xabcdef00000000000000000000000000000000aa"],
-      },
+      trustedAttestedContracts: { "tron:728126428": ["0xabcdef00000000000000000000000000000000aa"] },
     });
-    const quote: PaymentQuote = {
-      protocolVersion: 1,
-      paymentRef: ("0x" + "ab".repeat(32)) as `0x${string}`,
-      amount: "1",
-      token: "native",
-      ecosystem: "tron",
-      chainId: 728126428,
+    const q = quote({
+      ecosystem: "tron", chainId: 728126428, token: "native",
       attestedContract: "0xABCDEF00000000000000000000000000000000AA",
-      attestedOrder: {
-        chainId: 728126428n,
-        paymentRef: ("0x" + "ab".repeat(32)) as `0x${string}`,
-        idHash: ("0x" + "cd".repeat(32)) as `0x${string}`,
-        token: "native",
-        amount: 1n,
-        cancelBefore: 1n,
-        claimBefore: 2n,
-        refundAfter: 3n,
-      },
-    };
-    expect(() => pinned.tronAttestedOrderTuple(quote)).not.toThrow();
+    });
+    expect(pinned.tronDepositCall(q).escrow).toBe("0xABCDEF00000000000000000000000000000000AA");
   });
 
   it("rejects a non-canonical Tron settlement pin", () => {
@@ -306,78 +188,7 @@ describe("GivroPayClient.fetchQuote (Tron)", () => {
       quoteUrl: "https://example.com/api/intent/quote",
       trustedAttestedContracts: { "tron:728126428": [base58] },
     });
-    const quote: PaymentQuote = {
-      protocolVersion: 1,
-      paymentRef: ("0x" + "ab".repeat(32)) as `0x${string}`,
-      amount: "1",
-      token: "native",
-      ecosystem: "tron",
-      chainId: 728126428,
-      attestedContract: base58,
-      attestedOrder: {
-        chainId: 728126428n,
-        paymentRef: ("0x" + "ab".repeat(32)) as `0x${string}`,
-        idHash: ("0x" + "cd".repeat(32)) as `0x${string}`,
-        token: "native",
-        amount: 1n,
-        cancelBefore: 1n,
-        claimBefore: 2n,
-        refundAfter: 3n,
-      },
-    };
-    expect(() => pinned.tronAttestedOrderTuple(quote))
-      .toThrow(/canonical non-zero address/i);
-  });
-});
-
-describe("GivroPayClient.fetchQuote native token aliases", () => {
-  it("canonicalizes ETH and matches a zero-address EVM response", async () => {
-    const mockFetch = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      text: () => Promise.resolve(""),
-      json: () => Promise.resolve({
-        paymentRef: "0x" + "ab".repeat(32),
-        ecosystem: "evm",
-        chainId: 8453,
-        token: "0x0000000000000000000000000000000000000000",
-        amountWei: "1",
-      }),
-    } as unknown as Response);
-    const client = new GivroPayClient({ quoteUrl: "https://example.com/quote", fetchImpl: mockFetch });
-    await expect(client.fetchQuote({
-      identifier: "u@x.co",
-      identifierKind: "email",
-      amountWei: "1",
-      token: "ETH",
-      vm: "evm",
-      chainId: 8453,
-    })).resolves.toMatchObject({ token: "0x0000000000000000000000000000000000000000" });
-    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
-    expect(JSON.parse(String(init.body)).token).toBe("0x0000000000000000000000000000000000000000");
-  });
-
-  it("canonicalizes SOL and matches the legacy default-pubkey response marker", async () => {
-    const mockFetch = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      text: () => Promise.resolve(""),
-      json: () => Promise.resolve({
-        paymentRef: "0x" + "ab".repeat(32),
-        ecosystem: "solana",
-        token: "11111111111111111111111111111111",
-        amountWei: "1",
-      }),
-    } as unknown as Response);
-    const client = new GivroPayClient({ quoteUrl: "https://example.com/quote", fetchImpl: mockFetch });
-    await expect(client.fetchQuote({
-      identifier: "u@x.co",
-      identifierKind: "email",
-      amountWei: "1",
-      token: "SOL",
-      vm: "solana",
-    })).resolves.toMatchObject({ token: "native" });
-    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
-    expect(JSON.parse(String(init.body)).token).toBe("native");
+    const q = quote({ ecosystem: "tron", chainId: 728126428, token: "native", attestedContract: base58 as `0x${string}` });
+    expect(() => pinned.tronDepositCall(q)).toThrow(/canonical non-zero address/i);
   });
 });

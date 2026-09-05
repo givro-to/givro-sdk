@@ -75,7 +75,7 @@ await givro.createPaymentLink({
   merchant_ref: "invoice_1001",
   return_url: "https://shop.example.com/order/invoice_1001",
   message: "Demo invoice",
-}, "invoice_1001_v1");
+}, "invoice_1001");
 ```
 
 The token is `token_symbol` (resolved by Givro for the chain) or `token_address` (an exact contract). Provide either one; the address wins when both are present. The environment comes from the API key, so no `environment` field is needed in the body. The portal accepts `recipient_identifier` / `chain_id` as aliases; the SDK types the canonical `recipient` / `chainId`.

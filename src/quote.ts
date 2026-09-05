@@ -1,8 +1,8 @@
-import type { ChainVm, PaymentQuote, QuoteRequestBody, RetryOptions } from "./types.js";
+import type { ChainVm, EscrowOrder, PaymentQuote, QuoteRequestBody, RetryOptions } from "./types.js";
 import { GivroPayError, GivroPayNetworkError, GivroPayQuoteError, GivroPayTimeoutError } from "./errors.js";
 
 const EVM_NATIVE_TOKEN = "0x0000000000000000000000000000000000000000";
-const SOLANA_NATIVE_TOKEN = "native";
+const TRON_NATIVE_TOKEN = "native";
 const EVM_NATIVE_SYMBOLS_BY_CHAIN: Readonly<Record<number, ReadonlySet<string>>> = {
   1: new Set(["ETH"]),
   10: new Set(["ETH"]),
@@ -10,6 +10,7 @@ const EVM_NATIVE_SYMBOLS_BY_CHAIN: Readonly<Record<number, ReadonlySet<string>>>
   97: new Set(["BNB"]),
   137: new Set(["POL"]),
   31337: new Set(["ETH", "GO"]),
+  31338: new Set(["ETH", "GO"]),
   8453: new Set(["ETH"]),
   84532: new Set(["ETH", "GO"]),
   42161: new Set(["ETH"]),
@@ -47,24 +48,21 @@ export function canonicalQuoteToken(vm: ChainVm, token: string, chainId?: number
       return EVM_NATIVE_TOKEN;
     }
   }
-  if (vm === "tron" && (alias === "TRX" || alias === "NATIVE" || trimmed === EVM_NATIVE_TOKEN)) return "native";
-  if (vm === "solana" && (alias === "SOL" || alias === "NATIVE" || trimmed === "11111111111111111111111111111111")) {
-    return SOLANA_NATIVE_TOKEN;
+  if (vm === "tron" && (alias === "TRX" || alias === "NATIVE" || trimmed === EVM_NATIVE_TOKEN)) {
+    return TRON_NATIVE_TOKEN;
   }
   return trimmed;
 }
 
 function quoteVm(body: QuoteRequestBody): ChainVm {
   const vm = body.vm ?? body.ecosystem;
-  if (vm !== "evm" && vm !== "tron" && vm !== "solana") {
-    throw new GivroPayQuoteError("vm (or ecosystem) must be evm | solana | tron");
+  if (vm !== "evm" && vm !== "tron") {
+    throw new GivroPayQuoteError("vm (or ecosystem) must be evm | tron");
   }
   return vm;
 }
 
-/**
- * JSON body for `POST /api/intent/quote` (Send page / Tron). Other VMs use the legacy portal quote shape as-is.
- */
+/** JSON body for `POST /api/intent/quote`. */
 export function serializeQuoteRequestBody(body: QuoteRequestBody): Record<string, unknown> {
   const vm = quoteVm(body);
   const token = canonicalQuoteToken(vm, body.token, body.chainId);
@@ -109,159 +107,105 @@ function parseQuoteBigInt(value: unknown, fieldName: string): bigint {
   }
 }
 
-/** Normalize various JSON shapes into `PaymentQuote`. */
-/**
- * Parse the v2 settlement material a v2 quote carries. The portal still returns
- * the legacy `order` block alongside it for older readers, but on a v2 chain
- * that block is not fundable: `attestedContract` points at the v2 escrow, which
- * has no v1 selector and no fallback, so v1 calldata built from it reverts.
- * `coercePaymentQuote` therefore refuses to derive the v1 fields from a v2
- * quote at all -- a caller on the v1 path gets `undefined` and a thrown build
- * error, rather than a transaction that only fails once broadcast.
- */
-function coerceIntentBlinded(
-  raw: Record<string, unknown>,
-  ecosystem: ChainVm,
-  chainId: number | undefined,
-): PaymentQuote["intentBlinded"] | undefined {
-  const blob = raw.intentBlinded;
-  if (blob == null || typeof blob !== "object") return undefined;
-  const src = blob as Record<string, unknown>;
-  const escrow = typeof src.escrow === "string" ? src.escrow : "";
-  if (!escrow) throw new GivroPayQuoteError("intentBlinded.escrow is required");
-  const order = (src.order ?? {}) as Record<string, unknown>;
-  if (order.intentId == null || order.blindedBinding == null) {
-    throw new GivroPayQuoteError("intentBlinded.order missing intentId or blindedBinding");
-  }
-  const claimAuthorization = Number(order.claimAuthorization ?? 0);
-  if (claimAuthorization !== 0 && claimAuthorization !== 1) {
-    throw new GivroPayQuoteError("intentBlinded.order.claimAuthorization must be 0 or 1");
-  }
-  return {
-    escrow,
-    // Zero is legal and meaningful: it marks a vault that cannot settle
-    // unattended and must be claimed with the recipient's own signature.
-    mandateCommit: normalizeHex32(src.mandateCommit ?? `0x${"0".repeat(64)}`, "intentBlinded.mandateCommit"),
-    order: {
-      chainId: parseQuoteBigInt(order.chainId, "intentBlinded.order.chainId"),
-      paymentRef: normalizeHex32(order.paymentRef, "intentBlinded.order.paymentRef"),
-      intentId: normalizeHex32(order.intentId, "intentBlinded.order.intentId"),
-      blindedBinding: normalizeHex32(order.blindedBinding, "intentBlinded.order.blindedBinding"),
-      bindingEpoch: parseQuoteBigInt(order.bindingEpoch ?? "1", "intentBlinded.order.bindingEpoch"),
-      claimAuthorization: claimAuthorization as 0 | 1,
-      token: canonicalQuoteToken(ecosystem, String(order.token ?? ""), chainId),
-      amount: parseQuoteBigInt(order.amount, "intentBlinded.order.amount"),
-      cancelBefore: parseQuoteBigInt(order.cancelBefore, "intentBlinded.order.cancelBefore"),
-      claimBefore: parseQuoteBigInt(order.claimBefore, "intentBlinded.order.claimBefore"),
-      refundAfter: parseQuoteBigInt(order.refundAfter, "intentBlinded.order.refundAfter"),
-    },
-  };
+function isCanonicalNonZeroAddress(value: unknown): value is `0x${string}` {
+  return typeof value === "string" && /^0x[0-9a-fA-F]{40}$/.test(value) && !/^0x0{40}$/i.test(value);
 }
 
+/**
+ * Normalize the portal's quote JSON into `PaymentQuote`.
+ *
+ * The settlement material lives under `intentBlinded` in the wire format:
+ * the escrow, the mandate commitment, and the eleven-field order the escrow
+ * stores. A quote without it cannot be funded and is refused here, rather than
+ * producing a transaction that only fails once broadcast.
+ */
 export function coercePaymentQuote(raw: Record<string, unknown>): PaymentQuote {
   const paymentRef = (raw.paymentRef ?? raw.payment_ref) as string | undefined;
   if (!paymentRef || !isHex32(paymentRef)) {
     throw new GivroPayQuoteError("missing or invalid paymentRef (32-byte hex)");
   }
   const ref = (paymentRef.startsWith("0x") ? paymentRef : `0x${paymentRef}`) as `0x${string}`;
-  // Support nested order object (Givro portal response shape)
-  const order = (raw.order ?? {}) as Record<string, unknown>;
-  // Prefer atomic-unit fields. `raw.amount` can be a human-readable display
-  // label on intent quote endpoints and must never override the signed order.
-  const amount = String(raw.amountWei ?? order.amountWei ?? order.amount ?? raw.amount ?? "");
-  if (!amount) throw new GivroPayQuoteError("missing amount");
-  const ecosystem = (raw.ecosystem ?? order.ecosystem) as string;
-  if (ecosystem !== "evm" && ecosystem !== "solana" && ecosystem !== "tron") {
-    throw new GivroPayQuoteError("ecosystem must be evm | solana | tron");
+
+  const ecosystem = raw.ecosystem as string;
+  if (ecosystem !== "evm" && ecosystem !== "tron") {
+    throw new GivroPayQuoteError("ecosystem must be evm | tron");
   }
-  const chainIdRaw = raw.chainId ?? order.chainId;
-  const chainId = chainIdRaw != null ? Number(chainIdRaw) : undefined;
-  if (chainId !== undefined && (!Number.isSafeInteger(chainId) || chainId <= 0)) {
+  const chainIdRaw = raw.chainId;
+  const chainId = chainIdRaw != null ? Number(chainIdRaw) : NaN;
+  if (!Number.isSafeInteger(chainId) || chainId <= 0) {
     throw new GivroPayQuoteError("chainId must be a positive integer");
   }
-  const rawToken = String(raw.token ?? order.token ?? "");
-  if (!rawToken) throw new GivroPayQuoteError("missing token");
-  const token = canonicalQuoteToken(ecosystem, rawToken, chainId);
-  const intentBlinded = coerceIntentBlinded(raw, ecosystem, chainId);
-  const declaredVersion = raw.protocolVersion != null ? Number(raw.protocolVersion) : undefined;
-  if (declaredVersion != null && declaredVersion !== 1 && declaredVersion !== 2) {
-    throw new GivroPayQuoteError(`unsupported protocolVersion ${String(raw.protocolVersion)}`);
+
+  const blob = raw.intentBlinded;
+  if (blob == null || typeof blob !== "object") {
+    throw new GivroPayQuoteError("quote carries no settlement material (intentBlinded)");
   }
-  const protocolVersion: 1 | 2 = intentBlinded || declaredVersion === 2 ? 2 : 1;
-  if (protocolVersion === 2 && !intentBlinded) {
-    throw new GivroPayQuoteError("quote declares protocolVersion 2 but carries no intentBlinded material");
+  const material = blob as Record<string, unknown>;
+  const escrow = material.escrow;
+  if (!isCanonicalNonZeroAddress(escrow)) {
+    throw new GivroPayQuoteError("intentBlinded.escrow must be a canonical non-zero 0x address");
+  }
+  const published = raw.attestedContract;
+  if (typeof published === "string" && published.length > 0 && published.toLowerCase() !== escrow.toLowerCase()) {
+    // Both name where the money goes. If they ever disagree, one of them is the
+    // address the integrator pinned and the other is where funds would land.
+    throw new GivroPayQuoteError("attestedContract disagrees with intentBlinded.escrow");
   }
 
-  const dep = raw.depositContract ?? raw.deposit_contract ?? raw.attestedContract;
-  const depositContract =
-    protocolVersion === 1 && typeof dep === "string" && dep.startsWith("0x")
-      ? (dep as `0x${string}`)
-      : undefined;
-  const attestedContractRaw = raw.attestedContract;
-  const attestedContract =
-    typeof attestedContractRaw === "string" && attestedContractRaw.length > 0 ? attestedContractRaw : undefined;
-  let attestedOrder: PaymentQuote["attestedOrder"] | undefined;
-  if (attestedContract && protocolVersion === 1) {
-    const hasOrderAmount = order.amount != null || order.amountWei != null;
-    if (
-      order.chainId == null
-      || order.token == null
-      || !hasOrderAmount
-      || order.idHash == null
-      || order.claimBefore == null
-      || order.refundAfter == null
-    ) {
-      throw new GivroPayQuoteError("attestedOrder missing required fields");
-    }
-    const orderPaymentRef = normalizeHex32(
-      order.paymentRef ?? raw.paymentRef ?? raw.payment_ref,
-      "paymentRef",
-    );
-    const orderIdHash = normalizeHex32(order.idHash, "order.idHash");
-    const claimBefore = parseQuoteBigInt(order.claimBefore, "order.claimBefore");
-    const orderAmountRaw = order.amount ?? order.amountWei;
-    if (orderAmountRaw == null) {
-      throw new GivroPayQuoteError("attestedOrder missing amount (or amountWei)");
-    }
-    attestedOrder = {
-      chainId: parseQuoteBigInt(order.chainId, "order.chainId"),
-      paymentRef: orderPaymentRef,
-      idHash: orderIdHash,
-      token: canonicalQuoteToken(ecosystem, String(order.token), chainId),
-      amount: parseQuoteBigInt(orderAmountRaw, "order.amount"),
-      cancelBefore: order.cancelBefore != null
-        ? parseQuoteBigInt(order.cancelBefore, "order.cancelBefore")
-        : claimBefore,
-      claimBefore,
-      refundAfter: parseQuoteBigInt(order.refundAfter, "order.refundAfter"),
-    };
+  const src = (material.order ?? {}) as Record<string, unknown>;
+  const claimAuthorization = Number(src.claimAuthorization ?? 0);
+  if (claimAuthorization !== 0 && claimAuthorization !== 1) {
+    throw new GivroPayQuoteError("intentBlinded.order.claimAuthorization must be 0 or 1");
   }
-  const programId = typeof raw.programId === "string" ? raw.programId : undefined;
+  const orderPaymentRef = normalizeHex32(src.paymentRef ?? ref, "intentBlinded.order.paymentRef");
+  if (orderPaymentRef.toLowerCase() !== ref.toLowerCase()) {
+    throw new GivroPayQuoteError("intentBlinded.order.paymentRef disagrees with paymentRef");
+  }
+  const orderChainId = parseQuoteBigInt(src.chainId ?? chainId, "intentBlinded.order.chainId");
+  if (orderChainId !== BigInt(chainId)) {
+    throw new GivroPayQuoteError("intentBlinded.order.chainId disagrees with chainId");
+  }
+  const orderToken = canonicalQuoteToken(ecosystem, String(src.token ?? raw.token ?? ""), chainId);
+  if (!orderToken) throw new GivroPayQuoteError("missing token");
+  const topToken = raw.token != null ? canonicalQuoteToken(ecosystem, String(raw.token), chainId) : orderToken;
+  const tokensAgree = ecosystem === "evm"
+    ? topToken.toLowerCase() === orderToken.toLowerCase()
+    : topToken === orderToken;
+  if (!tokensAgree) throw new GivroPayQuoteError("token disagrees with intentBlinded.order.token");
 
-  // ── Solana order fields (server returns under `order` key) ───────────────
-  let solanaOrder: PaymentQuote["solanaOrder"] | undefined;
-  if (ecosystem === "solana" && order.idHash != null && order.claimBefore != null) {
-    solanaOrder = {
-      cancelBefore: String(order.cancelBefore ?? order.claimBefore),
-      claimBefore: String(order.claimBefore),
-      refundAfter: String(order.refundAfter),
-      idHash: String(order.idHash),
-    };
+  const order: EscrowOrder = {
+    chainId: orderChainId,
+    paymentRef: orderPaymentRef,
+    intentId: normalizeHex32(src.intentId, "intentBlinded.order.intentId"),
+    blindedBinding: normalizeHex32(src.blindedBinding, "intentBlinded.order.blindedBinding"),
+    bindingEpoch: parseQuoteBigInt(src.bindingEpoch ?? "1", "intentBlinded.order.bindingEpoch"),
+    claimAuthorization: claimAuthorization as 0 | 1,
+    token: orderToken,
+    amount: parseQuoteBigInt(src.amount, "intentBlinded.order.amount"),
+    cancelBefore: parseQuoteBigInt(src.cancelBefore, "intentBlinded.order.cancelBefore"),
+    claimBefore: parseQuoteBigInt(src.claimBefore, "intentBlinded.order.claimBefore"),
+    refundAfter: parseQuoteBigInt(src.refundAfter, "intentBlinded.order.refundAfter"),
+  };
+  if (order.amount <= 0n) throw new GivroPayQuoteError("intentBlinded.order.amount must be positive");
+  if (!(order.cancelBefore <= order.claimBefore && order.claimBefore < order.refundAfter)) {
+    throw new GivroPayQuoteError("intentBlinded.order has invalid lifecycle windows");
+  }
+  const topAmount = raw.amountWei != null ? String(raw.amountWei) : undefined;
+  if (topAmount !== undefined && (!/^\d+$/.test(topAmount) || BigInt(topAmount) !== order.amount)) {
+    throw new GivroPayQuoteError("amountWei disagrees with intentBlinded.order.amount");
   }
 
   return {
     paymentRef: ref,
-    amount,
-    token,
+    amount: order.amount.toString(),
+    token: orderToken,
     ecosystem,
     chainId,
-    protocolVersion,
-    depositContract,
-    attestedContract,
-    attestedOrder,
-    intentBlinded,
-    programId,
-    solanaOrder,
+    attestedContract: escrow,
+    // Zero is legal and meaningful: it marks a vault that cannot settle
+    // unattended and must be claimed with the recipient's own signature.
+    mandateCommit: normalizeHex32(material.mandateCommit ?? `0x${"0".repeat(64)}`, "intentBlinded.mandateCommit"),
+    order,
   };
 }
 

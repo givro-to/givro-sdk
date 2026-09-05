@@ -7,54 +7,55 @@ export type NetworkName = "devnet" | "mainnet";
 
 export interface GivroPayNetwork {
   name: NetworkName;
-  /** EVM chain ID for this deployment */
-  evmChainId: number;
-  /** Optional Solana development cluster. Absence means the preset does not advertise Solana. */
-  solanaCluster?: "devnet" | "testnet" | "mainnet-beta";
-  /** Optional reviewed hfi-pay Solana program ID for this preset. */
-  solanaProgramId?: string;
-  /** Optional hfi-pay-deposit Solana program ID for legacy development paths. */
-  solanaDepositProgramId?: string;
-  /** Optional Tron chain ID enabled by this deployment. */
+  /** EVM chain IDs this deployment serves. */
+  evmChainIds: readonly number[];
+  /** Tron chain ID served by this deployment, when Tron is enabled. */
   tronChainId?: number;
   /** Default portal base URL (can be overridden per-client) */
   portalBaseUrl: string;
   /** Default quote service URL (can be overridden per-client) */
   defaultQuoteUrl: string;
   /**
-   * Example asset registry for this network. Values are EVM `0x` addresses.
+   * Example asset registry, keyed by EVM chain ID. Values are `0x` addresses.
    * Applications must resolve non-native symbols through a reviewed registry
    * before calling `quoteSend`.
    */
-  knownTokens: Record<string, string>;
+  knownTokens: Readonly<Record<number, Readonly<Record<string, string>>>>;
   /** Example Tron asset registry for this deployment. */
-  knownTronTokens?: Record<string, string>;
+  knownTronTokens?: Readonly<Record<string, string>>;
 }
+
+const NATIVE = "0x0000000000000000000000000000000000000000";
 
 export const NETWORKS: Record<NetworkName, GivroPayNetwork> = {
   devnet: {
     name: "devnet",
-    evmChainId: 31337,
-    solanaCluster: "devnet",
-    solanaProgramId: "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS",
-    solanaDepositProgramId: "B8sLQ5g6ABbZyyuyx9hia4kFv8nMo4wCqWXcLcR9XpJZ",
+    evmChainIds: [31338],
+    tronChainId: 3448148188,
     portalBaseUrl: "http://localhost:3100",
     defaultQuoteUrl: "http://localhost:3100/api/intent/quote",
     knownTokens: {
-      GO: "0x0000000000000000000000000000000000000000",
-      ETH: "0x0000000000000000000000000000000000000000",
+      31338: { ETH: NATIVE, GO: NATIVE },
     },
+    knownTronTokens: { TRX: "native" },
   },
   mainnet: {
     name: "mainnet",
-    evmChainId: 8453,
+    evmChainIds: [8453, 56],
     tronChainId: 728126428,
     portalBaseUrl: "https://givro.to",
     defaultQuoteUrl: "https://givro.to/api/intent/quote",
     knownTokens: {
-      ETH: "0x0000000000000000000000000000000000000000",
-      USDC: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-      USDT: "0xfde4C96c8593536e31f229ea8f37b2ada2699bb2",
+      8453: {
+        ETH: NATIVE,
+        USDC: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+        USDT: "0xfde4C96c8593536e31f229ea8f37b2ada2699bb2",
+      },
+      56: {
+        BNB: NATIVE,
+        USDC: "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
+        USDT: "0x55d398326f99059fF775485246999027B3197955",
+      },
     },
     knownTronTokens: {
       TRX: "native",
@@ -70,7 +71,7 @@ export function getNetwork(name: NetworkName): GivroPayNetwork {
   return n;
 }
 
-/** `POST /api/intent/quote` for the given portal deployment (Send page / Tron). */
+/** `POST /api/intent/quote` for the given portal deployment. */
 export function intentQuoteUrlForPortal(portalBaseUrl: string): string {
   return `${portalBaseUrl.replace(/\/$/, "")}/api/intent/quote`;
 }

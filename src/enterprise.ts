@@ -90,10 +90,10 @@ export interface CreatePaymentLinkBase {
    * list that leaves that pair out is refused: it would be a link opening on an
    * asset its own quote declines.
    *
-   * Entries must stay on the link's own ecosystem (`evm` or `tron`). A mixed
-   * ecosystem set is rejected by the API because the payer cannot satisfy it in
-   * one wallet/escrow flow. Within one ecosystem the set may span chains, and
-   * the payer then chooses the channel on the pay page.
+   * Entries may mix EVM and Tron. They are payment channels for the same
+   * face amount; the payer chooses which wallet and chain to pay from. Within
+   * one ecosystem the set may span chains, and the payer then chooses the
+   * channel on the pay page.
    *
    * Each entry must also name a chain the key's own environment bills on — a
    * test key cannot list a mainnet chain — and a token that resolves on it.

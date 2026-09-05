@@ -1,24 +1,15 @@
-import type { Connection } from "@solana/web3.js";
-import { PublicKey } from "@solana/web3.js";
 import type { Address } from "viem";
 import {
-  buildIntentBlindedErc20Deposit,
-  buildIntentBlindedNativeDeposit,
-} from "./evm/prepareIntentBlindedDeposit.js";
+  buildEvmErc20Deposit,
+  buildEvmNativeDeposit,
+  isNativeEvmToken,
+  type EvmTxRequest,
+} from "./evm/escrow.js";
 import { GivroPayBuildTxError, GivroPayQuoteError } from "./errors.js";
 import { normalizeRecipient, type RecipientKind } from "./identifier.js";
 import { canonicalQuoteToken, fetchPaymentQuote } from "./quote.js";
-import { paymentRefHexToBytes } from "./solana/utils.js";
-import {
-  buildSolanaAttestedDepositTransaction,
-} from "./solana/prepareSolanaDeposit.js";
+import { tronDepositCallFromQuote, type TronDepositCall } from "./tron/deposit.js";
 import type { ChainVm, GivroPayClientConfig, PaymentQuote, QuoteRequestBody } from "./types.js";
-import { tronAttestedOrderTupleFromQuote } from "./tron/prepareTronAttestedDeposit.js";
-import {
-  buildEvmApproveRequest,
-  buildEvmAttestedDepositRequest,
-  isNativeEvmToken,
-} from "./evm/prepareEvmDeposit.js";
 
 /** Derive the portal base URL from the quote URL when not explicitly configured. */
 function derivePortalBaseUrl(config: GivroPayClientConfig): string {
@@ -29,6 +20,10 @@ function derivePortalBaseUrl(config: GivroPayClientConfig): string {
   } catch {
     return "";
   }
+}
+
+function isCanonicalNonZeroHexAddress(address: string): boolean {
+  return /^0x[0-9a-fA-F]{40}$/.test(address) && !/^0x0{40}$/i.test(address);
 }
 
 export class GivroPayClient {
@@ -42,21 +37,15 @@ export class GivroPayClient {
       : canonicalLeft === canonicalRight;
   }
 
-  private requestTokenMatches(vm: ChainVm, requested: string, actual: string, chainId?: number): boolean {
-    return this.tokensEqual(vm, requested, actual, chainId);
-  }
-
+  /**
+   * The escrow named by the quote must be one the integrator pinned for that
+   * chain. The same pin covers EVM and Tron: both put the settlement contract
+   * in `attestedContract` as a canonical `0x` address.
+   */
   private assertTrustedAttestedContract(q: PaymentQuote): void {
-    if (!q.attestedContract || q.chainId == null) {
-      throw new GivroPayQuoteError("missing attestedContract/chainId");
-    }
     const key = `${q.ecosystem}:${q.chainId}`;
     const trusted = this.config.trustedAttestedContracts?.[key] ?? [];
     const quoted = q.attestedContract;
-    const isCanonicalNonZeroHexAddress = (address: string) => (
-      /^0x[0-9a-fA-F]{40}$/.test(address)
-      && !/^0x0{40}$/i.test(address)
-    );
     if (!isCanonicalNonZeroHexAddress(quoted)) {
       throw new GivroPayQuoteError(`attested contract is not a canonical non-zero address for ${key}`);
     }
@@ -69,76 +58,18 @@ export class GivroPayClient {
     }
   }
 
-  private assertTrustedSolanaProgram(q: PaymentQuote, cluster: string): string {
-    if (!q.programId) throw new GivroPayQuoteError("Solana quote missing programId");
-    const trusted = this.config.trustedSolanaPrograms?.[cluster] ?? [];
-    if (!trusted.includes(q.programId)) {
-      throw new GivroPayQuoteError(`Solana program is not trusted for ${cluster}`);
-    }
-    return q.programId;
-  }
-
-  private assertSolanaOrderComplete(q: PaymentQuote): asserts q is PaymentQuote & {
-    programId: string;
-    solanaOrder: NonNullable<PaymentQuote["solanaOrder"]>;
-  } {
-    if (!q.solanaOrder || !q.programId) throw new GivroPayQuoteError("Solana quote missing programId/solanaOrder");
-    if (!/^0x[0-9a-fA-F]{64}$/.test(q.solanaOrder.idHash)) throw new GivroPayQuoteError("Solana quote has invalid idHash");
-    if (!/^\d+$/.test(q.amount) || BigInt(q.amount) <= 0n) throw new GivroPayQuoteError("Solana quote has invalid amount");
-    if (![q.solanaOrder.cancelBefore, q.solanaOrder.claimBefore, q.solanaOrder.refundAfter].every((value) => /^\d+$/.test(value))) {
-      throw new GivroPayQuoteError("Solana quote has invalid lifecycle windows");
-    }
-    const cancelBefore = BigInt(q.solanaOrder.cancelBefore);
-    const claimBefore = BigInt(q.solanaOrder.claimBefore);
-    const refundAfter = BigInt(q.solanaOrder.refundAfter);
-    if (!(cancelBefore <= claimBefore && claimBefore < refundAfter)) {
-      throw new GivroPayQuoteError("Solana quote has invalid lifecycle windows");
-    }
-  }
-
-  private assertAttestedOrderComplete(q: PaymentQuote): asserts q is PaymentQuote & {
-    attestedContract: Address;
-    attestedOrder: NonNullable<PaymentQuote["attestedOrder"]>;
-  } {
-    if (!q.attestedContract || !q.attestedOrder) {
-      throw new GivroPayQuoteError("missing attestedContract/attestedOrder");
-    }
-    const o = q.attestedOrder;
-    if (!o.paymentRef || !o.idHash || !o.token) {
-      throw new GivroPayQuoteError("attested quote missing order.paymentRef/idHash/token");
-    }
-    if (!this.tokensEqual(q.ecosystem, q.token, o.token, q.chainId)) {
-      throw new GivroPayQuoteError("attested quote token mismatch: quote.token must match order.token");
-    }
-    if (q.paymentRef.toLowerCase() !== o.paymentRef.toLowerCase()) {
-      throw new GivroPayQuoteError("attested quote paymentRef mismatch");
-    }
-    if (q.chainId == null || BigInt(q.chainId) !== o.chainId) {
-      throw new GivroPayQuoteError("attested quote chainId mismatch");
-    }
-    if (!/^\d+$/.test(q.amount) || BigInt(q.amount) !== o.amount) {
-      throw new GivroPayQuoteError("attested quote amount mismatch");
-    }
-    if (!(o.cancelBefore <= o.claimBefore && o.claimBefore < o.refundAfter)) {
-      throw new GivroPayQuoteError("attested quote has invalid lifecycle windows");
-    }
-  }
-
   private assertQuoteMatchesRequest(q: PaymentQuote, request: QuoteRequestBody): void {
     const vm = (request.vm ?? request.ecosystem) as ChainVm | undefined;
     if (!vm || q.ecosystem !== vm) throw new GivroPayQuoteError("ecosystem does not match request");
     if (request.chainId != null && q.chainId !== request.chainId) {
       throw new GivroPayQuoteError("chainId does not match request");
     }
-    const actualToken = q.attestedOrder?.token ?? q.token;
-    if (!this.requestTokenMatches(vm, request.token, actualToken, q.chainId ?? request.chainId)) {
+    if (!this.tokensEqual(vm, request.token, q.order.token, q.chainId)) {
       throw new GivroPayQuoteError("token does not match request");
     }
-    const actualAmount = q.attestedOrder?.amount.toString() ?? q.amount;
-    if (actualAmount !== request.amountWei) {
+    if (q.order.amount.toString() !== request.amountWei) {
       throw new GivroPayQuoteError("amount does not match request");
     }
-    if (q.attestedOrder) this.assertAttestedOrderComplete(q);
   }
 
   async fetchQuote(body: QuoteRequestBody): Promise<PaymentQuote> {
@@ -177,17 +108,16 @@ export class GivroPayClient {
   /**
    * Full quote request from human input.
    *
-   * @param params.vm         Target chain VM: "evm" | "solana" | "tron".
-   *                          Alias: `ecosystem` (deprecated, same effect).
+   * @param params.vm         Target chain VM: "evm" | "tron". Alias: `ecosystem`.
    * @param params.chainId    EVM or Tron chain ID.
-   * @param params.token      Token contract/mint address, or a native symbol such as ETH/TRX/SOL.
-   * @param params.amount     Smallest-unit amount as a decimal string (wei / raw).
+   * @param params.token      Token contract address, or a native symbol such as ETH/BNB/TRX.
+   * @param params.amount     Smallest-unit amount as a decimal string (wei / sun / raw).
    *                          Use `toBaseUnits(humanAmount, decimals)` to convert first.
-   * @param params.amountHuman Optional human amount for `POST /api/intent/quote` (Tron / Send page). Defaults to `amount`.
+   * @param params.amountHuman Optional human amount for `POST /api/intent/quote`. Defaults to `amount`.
    * @param params.turnstile  Fresh Cloudflare Turnstile token for consumer browser quotes.
    *                          Production consumer quote endpoints reject API-key authentication.
-   * @param params.recipient  Recipient address in `recipientKind` format.
-   * @param params.recipientKind "email" | "phone" | "x"
+   * @param params.recipient  Recipient in `recipientKind` format.
+   * @param params.recipientKind "email" | "x" | "givro_id" (phone is typed but not served).
    */
   async quoteSend(params: {
     recipientKind: RecipientKind;
@@ -200,13 +130,13 @@ export class GivroPayClient {
     ecosystem?: ChainVm;
     chainId?: number;
     cancelWindowSec?: number;
-    /** Human-readable amount label for intent quote (e.g. Tron). */
+    /** Human-readable amount label for the intent quote. */
     amountHuman?: string;
     turnstile?: string;
     /** @deprecated Current Portal derives the X sender from `X-X-Session`. */
     senderXUid?: string;
     senderWalletAddr?: string;
-    senderWalletEcosystem?: "evm" | "solana" | "tron";
+    senderWalletEcosystem?: ChainVm;
   }): Promise<PaymentQuote> {
     const vm = (params.vm ?? params.ecosystem) as ChainVm | undefined;
     if (!vm) throw new GivroPayQuoteError("quoteSend: vm (or ecosystem) is required");
@@ -229,123 +159,33 @@ export class GivroPayClient {
   }
 
   /**
-   * Tron: order tuple for `HfiPayAttested` `depositErc20WithOrder` / `depositNativeWithOrder` (TronWeb).
-   */
-  tronAttestedOrderTuple(quote: PaymentQuote): ReturnType<typeof tronAttestedOrderTupleFromQuote> {
-    this.assertAttestedOrderComplete(quote);
-    this.assertTrustedAttestedContract(quote);
-    return tronAttestedOrderTupleFromQuote(quote);
-  }
-
-  /**
    * EVM: returns approve (ERC-20 only) + deposit txs for wagmi `sendTransaction` / WalletConnect.
-   *
-   * Requires attested fields (`attestedContract`, `attestedOrder`) and builds a
-   * permissionless attested deposit (no portal signature required).
+   * The quote's escrow must be pinned in `trustedAttestedContracts`.
    */
-  prepareEvmTransactions(params: {
-    quote: PaymentQuote;
-    depositContract?: Address;
-    /** Relay node address to receive origin fee share. Omit for no relay. */
-    originRelayAddress?: Address;
-  }): { approve: ReturnType<typeof buildEvmApproveRequest> | null; deposit: ReturnType<typeof buildEvmAttestedDepositRequest> } {
+  prepareEvmTransactions(params: { quote: PaymentQuote }): { approve: EvmTxRequest | null; deposit: EvmTxRequest } {
     const q = params.quote;
     if (q.ecosystem !== "evm") throw new GivroPayBuildTxError("quote ecosystem must be evm");
-
-    // v2 first: the portal issues these for every chain it has migrated, and a
-    // v2 quote must never reach the v1 branch below. Both rails put the
-    // settlement contract in `attestedContract`, so the same pin the caller
-    // already configured is the one checked here -- an integrator does not
-    // have to learn a second trust list to move across rails.
-    if (q.protocolVersion === 2) {
-      const material = q.intentBlinded;
-      if (!material) throw new GivroPayBuildTxError("v2 quote carries no intentBlinded material");
-      this.assertTrustedAttestedContract(q);
-      if (material.escrow.toLowerCase() !== (q.attestedContract as string).toLowerCase()) {
-        throw new GivroPayQuoteError("intentBlinded.escrow disagrees with the quote's attestedContract");
-      }
-      const escrow = material.escrow as Address;
-      const order = { ...material.order, token: material.order.token as Address };
-      if (isNativeEvmToken(order.token)) {
-        return {
-          approve: null,
-          deposit: buildIntentBlindedNativeDeposit({ escrow, order, mandateCommit: material.mandateCommit }),
-        };
-      }
-      return buildIntentBlindedErc20Deposit({ escrow, order, mandateCommit: material.mandateCommit });
+    this.assertTrustedAttestedContract(q);
+    const escrow = q.attestedContract as Address;
+    const order = { ...q.order, token: q.order.token as Address };
+    if (isNativeEvmToken(order.token)) {
+      return {
+        approve: null,
+        deposit: buildEvmNativeDeposit({ escrow, order, mandateCommit: q.mandateCommit }),
+      };
     }
-
-    const isAttested = Boolean(q.attestedContract && q.attestedOrder);
-
-    if (isAttested) {
-      this.assertAttestedOrderComplete(q);
-      this.assertTrustedAttestedContract(q);
-      const attestedContract = q.attestedContract as Address;
-      const o = q.attestedOrder;
-      const orderToken = o.token as Address;
-      const deposit = buildEvmAttestedDepositRequest({
-        depositContract: attestedContract,
-        order: { ...o, token: orderToken },
-        originRelayAddress: params.originRelayAddress,
-      });
-      if (isNativeEvmToken(orderToken)) {
-        return { approve: null, deposit };
-      }
-      const approve = buildEvmApproveRequest({
-        token: orderToken,
-        depositContract: attestedContract,
-        amount: q.attestedOrder.amount,
-      });
-      return { approve, deposit };
-    }
-
-    throw new GivroPayBuildTxError("attested EVM quote required: quote must include attestedContract and attestedOrder");
-
+    return buildEvmErc20Deposit({ escrow, order, mandateCommit: q.mandateCommit });
   }
 
   /**
-   * Solana: build a versioned deposit transaction from a quote.
-   *
-   * Uses permissionless attested flow from `solanaOrder` (no portal signature).
+   * Tron: the escrow call a TronWeb wallet signs. The quote's escrow must be
+   * pinned in `trustedAttestedContracts` under `tron:<chainId>`.
    */
-  async prepareSolanaTransaction(
-    connection: Connection,
-    params: {
-      quote: PaymentQuote;
-      payer: PublicKey;
-      cluster: string;
-      recentBlockhash?: string;
-      /** Relay node pubkey for off-chain fee attribution. Omit for no relay. */
-      originRelayAddress?: string;
-    },
-  ): Promise<import("@solana/web3.js").VersionedTransaction> {
-    const q = params.quote;
-    if (q.ecosystem !== "solana") throw new GivroPayBuildTxError("quote ecosystem must be solana");
-
-    this.assertSolanaOrderComplete(q);
-    const programId = new PublicKey(this.assertTrustedSolanaProgram(q, params.cluster));
-    const { blockhash } =
-      params.recentBlockhash != null
-        ? { blockhash: params.recentBlockhash }
-        : await connection.getLatestBlockhash("confirmed");
-
-    return buildSolanaAttestedDepositTransaction(connection, {
-      programId,
-      payer: params.payer,
-      order: {
-        paymentRef: paymentRefHexToBytes(q.paymentRef),
-        idHash: paymentRefHexToBytes(q.solanaOrder.idHash),
-        mint: q.token === "native" ? PublicKey.default : new PublicKey(q.token),
-        amount: BigInt(q.amount),
-        cancelBefore: BigInt(q.solanaOrder.cancelBefore),
-        claimBefore: BigInt(q.solanaOrder.claimBefore),
-        refundAfter: BigInt(q.solanaOrder.refundAfter),
-      },
-      originRelayAddress: params.originRelayAddress ? new PublicKey(params.originRelayAddress) : undefined,
-      recentBlockhash: blockhash,
-    });
+  tronDepositCall(quote: PaymentQuote): TronDepositCall {
+    if (quote.ecosystem !== "tron") throw new GivroPayBuildTxError("quote ecosystem must be tron");
+    this.assertTrustedAttestedContract(quote);
+    return tronDepositCallFromQuote(quote);
   }
-
 }
 
 export function createGivroPayClient(config: GivroPayClientConfig): GivroPayClient {

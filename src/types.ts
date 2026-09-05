@@ -1,28 +1,23 @@
 import type { RecipientKind } from "./identifier.js";
 
-/** The VM / ecosystem a payment runs on. */
-export type ChainVm = "evm" | "solana" | "tron";
+/** The settlement VM a payment runs on. */
+export type ChainVm = "evm" | "tron";
 
 export interface QuoteRequestBody {
   identifier: string;
   identifierKind: RecipientKind;
-  /** Smallest units as decimal string (EVM wei / Solana raw amount / Tron sun or token raw) */
+  /** Smallest units as a decimal string (EVM wei / Tron sun or token raw). */
   amountWei: string;
   /**
    * Human amount label for `POST /api/intent/quote` (e.g. `"10.5"`).
-   * Required for best UX on the portal; when omitted, the SDK sends `amountWei` as `amount` as well.
+   * When omitted, the SDK sends `amountWei` as `amount` as well.
    */
   amount?: string;
   /**
    * Token identifier. Accepts:
    *  - EVM: checksummed `0x` token address, or the target chain's native symbol.
    *    Native symbols require `chainId` and are rejected when they do not match it.
-   *  - Solana: base58 SPL mint address, or "SOL" / "native" for native SOL quotes.
-   *    The public supported-assets response currently does not provide a
-   *    trusted Program ID, so discovery alone is not sufficient to enable a
-   *    Solana funding path. Wrapped SOL is an SPL mint and must not be treated
-   *    as the native-SOL marker.
-   *  - Tron: TRC20 contract (base58), or "TRX" for native TRX
+   *  - Tron: TRC20 contract (base58), or "TRX" for native TRX.
    * Non-native symbols are not independently resolvable by the SDK and must be
    * converted through an application-owned, reviewed asset registry first.
    */
@@ -31,7 +26,7 @@ export interface QuoteRequestBody {
   ecosystem?: ChainVm;
   /** Target VM / chain type. */
   vm?: ChainVm;
-  /** EVM or Tron chain ID. Solana uses cluster/program configuration instead. */
+  /** EVM or Tron chain ID. */
   chainId?: number;
   /**
    * Fresh Cloudflare Turnstile token for consumer-browser
@@ -43,7 +38,7 @@ export interface QuoteRequestBody {
   senderXUid?: string;
   /** Optional sender wallet. Requires a matching wallet-session Bearer token. */
   senderWalletAddr?: string;
-  senderWalletEcosystem?: "evm" | "solana" | "tron";
+  senderWalletEcosystem?: ChainVm;
   /**
    * Requested cancel window in seconds. Portal clamps values, including 0, to
    * its contract-compatible safety bounds. Omit to use the Portal default
@@ -52,101 +47,57 @@ export interface QuoteRequestBody {
   cancelWindowSec?: number;
 }
 
-/** Response your Givro quote service should return (fields may be nested; see `coercePaymentQuote`). */
-export interface PaymentQuote {
+/**
+ * The order tuple the escrow stores for one payment. Every field is committed
+ * on chain at funding; the escrow rejects a `blindedBinding` it has already
+ * seen, so no two payments share a recipient tag.
+ */
+export interface EscrowOrder {
+  chainId: bigint;
   paymentRef: `0x${string}`;
-  amount: string;
+  /** Per-payment identifier, bound into every claim digest for this vault. */
+  intentId: `0x${string}`;
+  /** Fresh per intent. */
+  blindedBinding: `0x${string}`;
+  bindingEpoch: bigint;
+  /** 0 = LazyAttested (first-receipt onboarding), 1 = ZkRegistered. */
+  claimAuthorization: 0 | 1;
+  /**
+   * EVM: `0x` token address, zero for the native asset. Tron: `native` for
+   * TRX, otherwise the TRC20 contract as returned by the portal.
+   */
   token: string;
-  /** The VM / chain type for this quote. */
-  ecosystem: ChainVm;
-  chainId?: number;
-
-  // ── EVM attested flow ─────────────────────────────────────────────────────
-  /** EVM: deployed `HfiPayDeposit` contract address */
-  depositContract?: `0x${string}`;
-  /**
-   * Attested `HfiPayAttested` contract. EVM and Tron quotes use a canonical,
-   * non-zero `0x…` Solidity address; clients must independently pin it.
-   */
-  attestedContract?: string;
-  /** EVM attested flow: canonical order fields for on-chain deposit */
-  attestedOrder?: {
-    chainId: bigint;
-    paymentRef: `0x${string}`;
-    idHash: `0x${string}`;
-    /** EVM: `0x` token address. Tron native is normalized to the ABI zero address by the tuple helper. */
-    token: string;
-    amount: bigint;
-    cancelBefore: bigint;
-    claimBefore: bigint;
-    refundAfter: bigint;
-  };
-
-  // ── v2 intent-blinded (the rail the portal funds today) ───────────────────
-  /**
-   * Which escrow generation this quote is for. A v2 quote carries no usable
-   * `depositContract` or `attestedOrder`: its `attestedContract` names the v2
-   * escrow, whose ABI shares no deposit selector with v1.
-   */
-  protocolVersion: 1 | 2;
-  /** v2 settlement material. Present exactly when `protocolVersion` is 2. */
-  intentBlinded?: {
-    /** v2 escrow. Pin this at onboarding; do not adopt it from a quote at runtime. */
-    escrow: string;
-    /**
-     * `keccak256(abi.encode(mandateSigner, salt))`, or 32 zero bytes when the
-     * recipient has no wallet bound yet. Zero marks a vault that cannot settle
-     * unattended and must be claimed with the recipient's own signature.
-     */
-    mandateCommit: `0x${string}`;
-    order: {
-      chainId: bigint;
-      paymentRef: `0x${string}`;
-      intentId: `0x${string}`;
-      /** Fresh per intent; the escrow rejects one it has already seen. */
-      blindedBinding: `0x${string}`;
-      bindingEpoch: bigint;
-      /** 0 = LazyAttested (first-receipt), 1 = ZkRegistered. */
-      claimAuthorization: 0 | 1;
-      token: string;
-      amount: bigint;
-      cancelBefore: bigint;
-      claimBefore: bigint;
-      refundAfter: bigint;
-    };
-  };
-
-  // ── Solana ────────────────────────────────────────────────────────────────
-  /** Solana: program ID (base58). Required and independently pinned by the client. */
-  programId?: string;
-  /** Solana: order parameters (idHash computed server-side, times are unix seconds as strings). */
-  solanaOrder?: {
-    cancelBefore: string;
-    claimBefore: string;
-    refundAfter: string;
-    idHash: string;
-  };
-
+  amount: bigint;
+  /** 0 waives the payer's cancel window entirely. */
+  cancelBefore: bigint;
+  claimBefore: bigint;
+  refundAfter: bigint;
 }
 
-/**
- * Persisted intent state returned by `hfi_pay_get_intent`.
- * Mirrors the backend `RpcIntent` struct in `hfi-pay-rpc`.
- */
-export interface RpcIntent {
-  intent_id: string;
-  amount: number;
-  chain: string;
-  mint_hex?: string | null;
-  blinded_binding: string;
-  binding_epoch: number;
-  deposit_address: string;
-  status: string;
-  expiry: number;
-  created_at: number;
-  claim_nonce: number;
-  /** On-chain claim destination (32-byte AccountId hex). Set after direct_deposit or manual claim. */
-  owner_hex?: string | null;
+/** A normalized quote from `POST /api/intent/quote` (see `coercePaymentQuote`). */
+export interface PaymentQuote {
+  paymentRef: `0x${string}`;
+  /** Atomic units, decimal string. Always equals `order.amount`. */
+  amount: string;
+  /** Canonical token: EVM zero address or `0x` address; Tron `native` or base58 contract. */
+  token: string;
+  ecosystem: ChainVm;
+  chainId: number;
+  /**
+   * The settlement escrow this payment funds into, as a canonical non-zero
+   * `0x` address on both EVM and Tron. The portal publishes the same value
+   * from `GET /api/public/supported-assets`; pin it at onboarding and pass it
+   * through `trustedAttestedContracts` rather than trusting a quote at runtime.
+   */
+  attestedContract: `0x${string}`;
+  /**
+   * `keccak256(abi.encode(mandateSigner, salt))` when the recipient already
+   * has a payout mandate, or 32 zero bytes when they do not. Zero marks a vault
+   * that cannot settle unattended and must be claimed with the recipient's own
+   * signature on first receipt.
+   */
+  mandateCommit: `0x${string}`;
+  order: EscrowOrder;
 }
 
 export interface RetryOptions {
@@ -162,14 +113,13 @@ export interface GivroPayClientConfig {
   /** e.g. `https://givro.to/api/intent/quote` */
   quoteUrl: string;
   /**
-   * Explicit `POST /api/intent/quote` URL (Tron + Send-page shape).
-   * If omitted for Tron, derived as `{portalBaseUrl}/api/intent/quote`.
+   * Explicit `POST /api/intent/quote` URL for Tron quotes.
+   * If omitted, derived as `{portalBaseUrl}/api/intent/quote`.
    */
   intentQuoteUrl?: string;
   /**
-   * Base URL of the Givro portal (without trailing slash).
-   * Used for Tron intent quote derivation. If omitted, derived from `quoteUrl`.
-   * e.g. `https://givro.to`
+   * Base URL of the Givro portal (without trailing slash). If omitted, derived
+   * from `quoteUrl`. e.g. `https://givro.to`
    */
   portalBaseUrl?: string;
   fetchImpl?: typeof fetch;
@@ -178,30 +128,9 @@ export interface GivroPayClientConfig {
   timeoutMs?: number;
   retry?: RetryOptions;
   /**
-   * Pinned attested-contract allowlist keyed by `${ecosystem}:${chainId}`.
-   * Transaction builders fail closed when the quote contract is not pinned.
-   * Example: `{ "evm:8453": ["0x..."] }`.
+   * Pinned settlement-escrow allowlist keyed by `${ecosystem}:${chainId}`.
+   * Transaction builders fail closed when the quote's escrow is not pinned.
+   * Example: `{ "evm:8453": ["0x..."], "tron:728126428": ["0x..."] }`.
    */
   trustedAttestedContracts?: Readonly<Record<string, readonly string[]>>;
-  /** Pinned Solana program allowlist keyed by cluster name, e.g. `mainnet-beta`. */
-  trustedSolanaPrograms?: Readonly<Record<string, readonly string[]>>;
-}
-
-export interface PrepareEvmSendParams {
-  recipientKind: RecipientKind;
-  recipient: string;
-  amount: string;
-  token: `0x${string}`;
-  chainId: number;
-  depositContract: `0x${string}`;
-}
-
-export interface PrepareSolanaSendParams {
-  recipientKind: RecipientKind;
-  recipient: string;
-  amount: string;
-  /** SPL mint base58. Native SOL additionally requires an independently pinned Program and reviewed marker mapping. */
-  mint: string;
-  /** Build-reviewed cluster whose configured program must match the quote. */
-  cluster: string;
 }
